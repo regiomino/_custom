@@ -1,0 +1,494 @@
+<?php
+
+/**
+* Implementation of hook_block_info().
+*/
+function regiomino_user_block_info() {
+  $blocks['regiomino_participate'] = array(
+    'info' => t('Regiomino Participate'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+  $blocks['regiomino_partners'] = array(
+    'info' => t('Regiomino Partners'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+  return $blocks;
+}
+
+function regiomino_user_theme() {
+	return array(
+		'regiomino_user_theme_participate_block' => array(
+			'template' => 'regiomino_user_participate_block',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_user_theme_partner_block' => array(
+			'template' => 'regiomino_user_partner_block',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+	);
+}
+
+/**
+* Implementation of hook_block_view().
+*/
+function regiomino_user_block_view($delta = '') {
+  switch($delta){
+    case 'regiomino_participate':
+			if(user_access('access content')){
+				$block['content'] = theme('regiomino_user_theme_participate_block', array());
+			}
+			return $block;  
+    case 'regiomino_partners':
+			if(user_access('access content')){
+				$query = new EntityFieldQuery();
+				$partnerquery = $query
+					->entityCondition('entity_type', 'node')
+					->entityCondition('bundle', array('partner'))
+					->propertyCondition('status', 1)
+					->execute();
+				$partnerobject = entity_load('node', array_keys($partnerquery['node']));
+				$partners = array();
+				foreach($partnerobject as $nid=>$value) {
+					$partnerimage_cl_full = array(
+						'style_name' => 'partnerlogos',
+						'path' => $value->field_logo[LANGUAGE_NONE][0]['uri'],
+						'title' => $value->title,
+					);
+					// $partnerimage_bw_full = array(
+						// 'style_name' => 'partnerlogos_bw',
+						// 'path' => $value->field_logo[LANGUAGE_NONE][0]['uri'],
+						// 'title' => $value->title,
+					// );
+					$partners[] = array(
+						'url' => url($value->field_link[LANGUAGE_NONE][0]['url'], array('external' => TRUE, 'absolute' => TRUE)),
+						'title' => $value->title,
+						'description' => $value->body[LANGUAGE_NONE][0]['value'],
+						//'image_bw' => image_style_url('partnerlogos_bw', $value->field_logo[LANGUAGE_NONE][0]['uri']),
+						'image_cl' => image_style_url('partnerlogos', $value->field_logo[LANGUAGE_NONE][0]['uri']),
+						'image_cl_full' => theme('image_style',$partnerimage_cl_full),
+						//'image_bw_full' => theme('image_style',$partnerimage_bw_full),
+					);
+				}
+				$block['content'] = theme('regiomino_user_theme_partner_block', array(
+																'vars' => array(
+																	'partners' => $partners
+																)
+															)
+														);
+			}
+			return $block;  
+	}
+}
+
+/**
+* Implementation of hook_menu().
+*/
+function regiomino_user_menu() {
+	$items = array();
+	
+	$items['user/%/shadow/%'] = array(
+    'page callback' => 'regiomino_user_shadow',
+    'page arguments' => array(1,3),
+    'access arguments' => array('shadow a user'),
+	);
+	
+	$items['user/exportemails'] = array(
+    'page callback' => 'regiomino_user_exportemails',
+		'access callback' => 'regiomino_user_user_has_role',
+	);
+	
+	return $items;
+}
+
+function regiomino_user_user_has_role() {
+	global $user;
+	if($user->uid == 1) return TRUE;
+	return in_array('Redakteur', $user->roles) ? TRUE : FALSE;
+}
+
+function regiomino_user_exportemails() {
+
+	$query = new EntityFieldQuery();
+	$tmp = $query
+		->entityCondition('entity_type', 'user')
+		->propertyCondition('status', 1)
+		->execute();
+	
+	// foreach($tmp['user'] as $key => $value) {
+		// $orderprocesses = regiomino_user_get_orderprocess_amount($key);
+		// if($orderprocesses <= 1) {
+			// unset($tmp['user'][$key]);
+		// }
+	// }
+	$userobjects = entity_load('user', array_keys($tmp['user']));
+
+	foreach($userobjects as $key => $value) {
+		
+		$csvoutput[] = array($value->mail,$value->field_address[LANGUAGE_NONE][0]['first_name'],$value->field_address[LANGUAGE_NONE][0]['last_name'],regiomino_user_get_orderprocess_amount($key),implode(',',$value->roles),$value->field_address[LANGUAGE_NONE][0]['postal_code']);
+	}
+	regiomino_shipping_array_to_csv_download($csvoutput, 'UserCSV_' . date('Y-m-d-H-i') . '.csv', "\t", FALSE);
+}
+
+function regiomino_user_permission() {
+  return array(
+    'shadow a user' => array(
+      'title' => t('Shadow a user'),
+      'description' => t('Shadow another user.'),
+    ),
+  );
+}
+
+function regiomino_user_shadow($cuid, $tuid) {
+	$performlogin = FALSE;
+	if (user_access('shadow a user') && $tuid != 1) {
+		$performlogin = TRUE;
+		global $user;
+		$tuserobject = user_load($tuid);
+		$cuserobject = user_load($user->uid);
+		if(in_array('Betreuer', $cuserobject->roles) && !in_array('Redakteur', $cuserobject->roles)) {
+			//Check if the $tuid has a zipcode within the assigned area of the coop
+			$coopprofile = node_load($cuserobject->field_profilereference_coop[LANGUAGE_NONE][0]['target_id']);
+			$assignedarea = $coopprofile->field_region[LANGUAGE_NONE][0]['value'];
+			$userpostal = $tuserobject->field_address[LANGUAGE_NONE][0]['postal_code'];
+ 			if (strpos($userpostal,$assignedarea) > 0 || strpos($userpostal,$assignedarea) === FALSE) {
+				$performlogin = FALSE;
+				drupal_set_message(t('This user is not located in your assigned area'), 'error');
+			}
+			//Check if $tuid is not a Redakteur or another Betreuer
+			//if(in_array('Betreuer', $tuserobject->roles) || in_array('Redakteur', $tuserobject->roles)) {
+			if(in_array('Redakteur', $tuserobject->roles)) {
+				$performlogin = FALSE;
+				drupal_set_message(t('This user cannot be shadowed because of his permission levels'), 'error');
+			}
+		}
+  }
+	if($performlogin) {
+		$user = user_load($tuid);
+		$login_array = array ('name' => $user->name);
+		drupal_set_message(t('You are now logged in as @username', array('@username' => $user->mail)));
+		user_login_finalize($login_array);
+		drupal_goto();
+	}
+	else {
+		drupal_access_denied();
+	}
+}
+
+function regiomino_user_email_registration_name($edit, $account) {
+  $tempname = preg_replace('/@.*$/', '', $edit['mail']);
+	$strippedname = preg_replace('/[^a-z]/', '', strtolower($tempname));
+	$new_name = substr($strippedname, 0, 12);
+	return $new_name;
+}
+
+function regiomino_user_username_alter(&$name, $account) {
+	$account = user_load($account->uid);
+	if(isset($account->field_address[LANGUAGE_NONE][0]['first_name']) && $account->field_address[LANGUAGE_NONE][0]['first_name'] != '' && $account->field_address[LANGUAGE_NONE][0]['last_name'] != '') {
+		$name = $account->field_address[LANGUAGE_NONE][0]['first_name'] . ' ' . $account->field_address[LANGUAGE_NONE][0]['last_name'];
+	}
+	else {
+		$name = $account->mail;
+	}
+}
+
+function regiomino_user_form_alter(&$form, &$form_state, $form_id) {  
+	if ($form_id == 'views_exposed_form' && (
+				$form['#id'] == 'views-exposed-form-user-accounts-page' ||
+				$form['#id'] == 'views-exposed-form-alle-angebote-page' ||
+				$form['#id'] == 'views-exposed-form-alle-angebote-page-2' ||
+				$form['#id'] == 'views-exposed-form-partnerprofiles-page')
+			) {
+		global $user;
+		if(in_array('Betreuer', $user->roles) && !in_array('Redakteur', $user->roles)) {
+			$userobject = user_load($user->uid);
+			$coopprofile = node_load($userobject->field_profilereference_coop[LANGUAGE_NONE][0]['target_id']);
+			$assignedarea = $coopprofile->field_region[LANGUAGE_NONE][0]['value'];
+ 			$form['field_address_postal_code']['#default_value'] = $assignedarea;
+			$form['field_address_postal_code']['#value'] = $assignedarea;
+			$form['field_address_postal_code']['#disabled'] = TRUE;
+		}
+	}
+	if ($form_id == 'views_exposed_form' && $form['#id'] == 'views-exposed-form-alle-rechnungen-page') {
+		global $user;
+		if(in_array('Betreuer', $user->roles) && !in_array('Redakteur', $user->roles)) {
+			$userobject = user_load($user->uid);
+			$coopprofile = node_load($userobject->field_profilereference_coop[LANGUAGE_NONE][0]['target_id']);
+			$assignedarea = $coopprofile->field_region[LANGUAGE_NONE][0]['value'];
+ 			$form['field_address_postal_code']['#default_value'] = $assignedarea;
+			$form['field_address_postal_code']['#value'] = $assignedarea;
+			$form['field_address_postal_code']['#disabled'] = TRUE;
+			$form['field_address_postal_code_1']['#default_value'] = $assignedarea;
+			$form['field_address_postal_code_1']['#value'] = $assignedarea;
+			$form['field_address_postal_code_1']['#disabled'] = TRUE;
+		}
+	}
+	if ($form_id == 'views_exposed_form' && $form['#id'] == 'views-exposed-form-all-orders-page-1') {
+		global $user;
+		if(in_array('Betreuer', $user->roles) && !in_array('Redakteur', $user->roles)) {
+			$userobject = user_load($user->uid);
+			$coopprofile = node_load($userobject->field_profilereference_coop[LANGUAGE_NONE][0]['target_id']);
+			$assignedarea = $coopprofile->field_region[LANGUAGE_NONE][0]['value'];
+ 			$form['seller_postal_code']['#default_value'] = $assignedarea;
+			$form['seller_postal_code']['#value'] = $assignedarea;
+			$form['seller_postal_code']['#disabled'] = TRUE;
+			$form['delivery_postal_code']['#default_value'] = $assignedarea;
+			$form['delivery_postal_code']['#value'] = $assignedarea;
+			$form['delivery_postal_code']['#disabled'] = TRUE;
+		}
+	}
+	if ($form_id == 'masquerade_block_1' && $form['#id'] == 'masquerade-block-1') {
+		$form['submit']['#value'] = t('Switch user');
+	}
+}
+
+function regiomino_user_get_active_offers($uid, $profiletype = 'seller_profile') {
+	if($profiletype != 'seller_profile') return 0;
+	$sqlstring= "SELECT COUNT(DISTINCT nid) as activeoffers FROM {node} WHERE type = 'offer' AND status = 1 AND soldout = 0 AND uid = " . $uid;
+	$sql = db_query($sqlstring);
+	$result = $sql->fetchAssoc();
+	return $result['activeoffers'];
+}
+
+function regiomino_user_get_orderprocess_amount($uid) {
+	$sqlstring= "SELECT order_process_id FROM {regiomino_order} WHERE uid = " . $uid . " AND (order_status = 'billed' OR order_status = 'completed' OR order_status = 'processing' OR order_status = 'delivered') GROUP BY order_process_id";
+	$sql = db_query($sqlstring);
+	$result = $sql->rowCount();
+	return $result;
+}
+
+function regiomino_user_views_bulk_operations_form_alter(&$form, &$form_state, $vbo) {
+  if ($form_state['step'] == 'views_form_views_form') {
+    // Alter the first step of the VBO form (the selection page).
+  }
+  elseif ($form_state['step'] == 'views_bulk_operations_config_form') {
+		if($form_state['values']['form_id'] == 'views_form_user_accounts_page') {
+			// Alter the configuration step of the VBO form.
+			if(isset($form['recipient']) && isset($form['message'])) {
+				$form['recipient']['#default_value'] = '[user:mail]';
+				$form['recipient']['#value'] = '[user:mail]';
+				$form['recipient']['#disabled'] = TRUE;
+				$form['actions']['submit']['#validate'][0] = 'regiomino_user_views_bulk_operations_form_validate';
+				$form['message']['#type'] = 'text_format';
+				$form['message']['#format'] = 'filtered_html';
+			}
+		}
+  }
+  elseif ($form_state['step'] == 'views_bulk_operations_confirm_form') {
+    // Alter the confirmation step of the VBO form.
+  }
+}
+
+function regiomino_user_views_bulk_operations_form_validate($form, &$form_state) {
+	if(isset($form_state) && $form_state['values']['form_id'] == 'views_form_user_accounts_page' && isset($form_state['values']['message']['value'])) {
+		$tmp = $form_state['values']['message']['value'];
+		unset($form_state['values']['message']);
+		$form_state['values']['message'] = $tmp;
+		$form_id = $form_state['values'];
+	}
+}
+
+function regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display = FALSE) {
+	if($points != 0) {
+		$upointparams = array(
+			'uid' => $uid,
+			'points' => $points,
+			'description' => $description,
+			'reference' => $reference,
+			'display' => FALSE,
+			'operation' => $operation,
+			'tid' => $category,
+		);
+		$upret = userpoints_userpointsapi($upointparams);
+		$txnbalance = (float)userpoints_get_current_points($uid, $category);
+		$txn_id = $upret['transaction']['txn_id'];
+		$txn_query = db_update('{userpoints_txn}')
+			->fields(
+				array(
+					'balance' => $txnbalance,
+				)
+			)
+			->condition('txn_id', $txn_id)
+			->execute();
+		return $txn_id;
+	}
+	else {
+		return 0;
+	}
+}
+
+function regiomino_user_node_validate($node, $form, &$form_state) {
+	if($node->is_new && ($node->type == 'seller_profile' || $node->type == 'shipper_profile' || $node->type == 'coop_profile' || $node->type == 'storage_profile')) {
+		global $user;
+		if($user->uid > 0) {
+			$equery = new EntityFieldQuery;
+			$profiles = $equery
+				->entityCondition('entity_type', 'node')
+				->propertyCondition('type', $node->type)
+				->propertyCondition('uid', $user->uid)
+				->execute();
+
+			$profileresults = entity_load('node', array_keys($profiles['node']));
+			if(!empty($profileresults)) {
+				form_set_error('field_email', t('There is already a profile in our system for your user account. Please contact us using the contact form on the bottom right of this site if you think this is an error.'));
+			}
+		}
+		else {
+			$userexists = user_load_by_mail($node->field_email[LANGUAGE_NONE][0]['email']);
+			if($userexists) {
+				$equery = new EntityFieldQuery;
+				$profiles = $equery
+					->entityCondition('entity_type', 'node')
+					->propertyCondition('type', $node->type)
+					->propertyCondition('uid', $userexists->uid)
+					->execute();
+
+				$profileresults = entity_load('node', array_keys($profiles['node']));
+				if(!empty($profileresults)) {
+					form_set_error('field_email', t('There is already a profile in our system for the email address you entered. Please contact us using the contact form on the bottom right of this site if you think this is an error.'));
+				}
+			}
+		}		
+	}
+}
+
+/**
+ * Alter the login form to include cart data.
+ *
+ * This is necessary if an anonymous user fills a shopping cart
+ * and then decides to login with an already existing account. After logging in
+ * drupal starts a new session for the logged in user. The old session id,
+ * which is used to identify anonymous carts, gets replaced by a new one when the
+ * user login form is submitted.
+ * This means anonymous carts cannot be connected to the user anymore if
+ * he or she logs in with his or her account. With this alteration the old session id gets
+ * passed on through an additional invisible field in the user login form
+ * and can be read by any function that takes place after submitting the login data.
+ */
+function regiomino_user_form_user_login_alter(&$form, &$form_state) {
+	$sessionid = session_id();
+	$form['sessiondata'] = array(
+		'#type' => 'value',
+		'#value' => $sessionid,
+	);
+}
+
+/**
+ * Alter the login form to include cart data.
+ *
+ * This is necessary if an anonymous user fills a shopping cart
+ * and then decides to login with an already existing account. After logging in
+ * drupal starts a new session for the logged in user. The old session id,
+ * which is used to identify anonymous carts, gets replaced by a new one when the
+ * user login form is submitted.
+ * This means anonymous carts cannot be connected to the user anymore if
+ * he or she logs in with his or her account. With this alteration the old session id gets
+ * passed on through an additional invisible field in the user login form
+ * and can be read by any function that takes place after submitting the login data.
+ */
+function regiomino_user_form_user_login_block_alter(&$form, &$form_state) {
+	$sessionid = session_id();
+	$form['sessiondata'] = array(
+		'#type' => 'value',
+		'#value' => $sessionid,
+	);
+}
+
+/**
+ * Alter the registration form to include cart data.
+ *
+ * This is necessary if an anonymous user fills a shopping cart
+ * and then decides to register a new account. After registration
+ * drupal starts a new session for the registered user. The old session id,
+ * which is used to identify anonymous carts, gets replaced by a new one when the
+ * user registration form is submitted.
+ * This means anonymous carts cannot be connected to the user anymore if
+ * he or she registers an account. With this alteration the old session id gets
+ * passed on through an additional invisible field in the user registration form
+ * and can be read by any function that takes place after submitting the registration.
+ */
+function regiomino_user_form_user_register_form_alter(&$form, &$form_state) {
+	$sessionid = session_id();
+	drupal_set_title(t('Please register'));
+	$form['sessiondata'] = array(
+		'#type' => 'value',
+		'#value' => $sessionid,
+	);
+}
+
+/**
+ * Hook into user login process to transfer anonymous carts to a user id
+ *
+ * This is necessary if an anonymous user fills a shopping cart
+ * and then decides to login with an existing account.
+ * With this function the shopping cart id is correctly transferred from an
+ * anonymous session id to a unique user id.
+ */
+function regiomino_user_user_login(&$edit, $account) {
+	//Check if an old session id has been passed on by the user login form
+	if(isset($edit['values']['sessiondata'])) {
+		//Retrieve the old session id
+		$oldsession = $edit['values']['sessiondata'];
+		//Get the user id of the now logged in user
+		$uid = $account->uid;
+		regiomino_cart_change_session_to_uid($oldsession, $uid);
+	}
+}
+
+/**
+ * Hook into user insert process to transfer anonymous carts to a user id
+ *
+ * This is necessary if an anonymous user fills a shopping cart
+ * and then decides to register a new account.
+ * With this function the shopping cart id is correctly transferred from an
+ * anonymous session id to a unique user id.
+ */
+function regiomino_user_user_insert(&$edit, $account, $category) {
+	//Retrieve the old session id from the fields that have been added through the form_alter hooks
+	$oldsession = $edit['sessiondata'];
+
+	//Get uid of the now logged in user
+	$uid = $account->uid;
+	regiomino_cart_change_session_to_uid($oldsession, $uid);
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function regiomino_user_form_user_admin_settings_alter(&$form, &$form_state) {
+  // reorder fieldset weights
+  $form['anonymous_settings']['#weight'] = -4;
+  $form['admin_role']['#weight'] = -3;
+  $form['registration_cancellation']['#weight'] = -2;
+  $form['nocurrent_pass_settings'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Require Current Password'),
+    '#weight' => -1,
+  );
+  $form['nocurrent_pass_settings']['regiomino_user_disabled'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Do not require current password'),
+    '#description' => t('Check this box to disable the "current password" field on the User Edit form.'),
+    '#default_value' => variable_get('regiomino_user_disabled', TRUE),
+  );
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ * Remove the current password field from the user_profile_form form (user/%/edit).
+ */
+function regiomino_user_form_user_profile_form_alter(&$form, &$form_state) {
+  if (variable_get('regiomino_user_disabled', TRUE)) {
+    // searches the #validate array for the current_pass validation function, and removes it
+    $key = array_search('user_validate_current_pass', $form['#validate']);
+    if ($key !== FALSE) {
+      unset($form['#validate'][$key]);
+    }
+    // hide the current password fields
+    $form['account']['current_pass_required_value']['#access'] = FALSE;
+    $form['account']['current_pass']['#access'] = FALSE;
+  }
+}

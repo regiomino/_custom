@@ -1,0 +1,956 @@
+<?php
+
+/**
+* Implementation of hook_menu().
+*/
+function regiomino_admin_menu() {
+	$items = array();
+	$items['admin/support/paymenttasks'] = array(
+    'title' => 'Perform payment tasks',
+    'page callback' => 'regiomino_admin_paymenttasks',
+    'access callback' => 'regiomino_admin_paymenttasks_access',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 2,
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+  );
+	$items['admin/support/allorders'] = array(
+    'title' => 'All orders',
+    'page callback' => 'regiomino_admin_allorders',
+    'access callback' => 'regiomino_admin_allorders_access',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 2,
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+  );
+  $items['admin/statistics'] = array(
+    'title' => t('Statistics'),
+    'page callback' => 'regiomino_admin_sales',
+		'access callback' => 'regiomino_admin_user_has_role',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_NORMAL_ITEM,
+  );	
+	$items['admin/statistics/sales'] = array(
+    'title' => 'Sales',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => 0,
+  );
+	$items['admin/statistics/registered'] = array(
+    'title' => t('Registrations'),
+    'page callback' => 'regiomino_admin_registered',
+		'access callback' => 'regiomino_admin_user_has_role',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+  );
+  $items['admin/statistics/contact'] = array(
+    'title' => t('Contact'),
+    'page callback' => 'regiomino_admin_webformsubmissions',
+		'access callback' => 'regiomino_admin_user_has_role',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+  );
+	$items['admin/statistics/soldproducts'] = array(
+    'title' => t('Sold products'),
+    'page callback' => 'regiomino_admin_soldproducts',
+		'access callback' => 'regiomino_admin_user_has_role',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+  );
+	$items['admin/statistics/transactions'] = array(
+    'title' => t('Transactions'),
+    'page callback' => 'regiomino_admin_transactions',
+		'access callback' => 'regiomino_admin_user_has_role',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+  );
+/* 	$items['admin/statistics/performance'] = array(
+    'title' => t('Performance'),
+    'page callback' => 'regiomino_admin_performance',
+		'access callback' => 'regiomino_admin_user_has_role',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+  ); */
+	$items['admin/statistics/invoices'] = array(
+    'title' => t('Invoices'),
+    'page callback' => 'regiomino_admin_invoices',
+		'access callback' => 'regiomino_admin_user_has_role',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+  );
+	$items['admin/statistics/topsellers'] = array(
+    'title' => t('Topsellers'),
+    'page callback' => 'regiomino_admin_topsellers',
+		'access callback' => 'regiomino_admin_user_has_role',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+  );
+	$items['admin/incomingorders'] = array(
+    'title' => t('Incoming orders'),
+    'page callback' => 'regiomino_admin_incomingorders',
+		'access callback' => 'regiomino_admin_user_is_seller',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_NORMAL_ITEM,
+  );	
+	$items['admin/incomingorders/grouped'] = array(
+    'title' => t('Incoming orders (grouped)'),
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => 0,
+  );	
+	$items['admin/incomingorders/grouped/upcoming'] = array(
+    'title' => t('Upcoming'),
+		'page arguments' => array('grouped', 3),
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => 0,
+  );
+	$items['admin/incomingorders/grouped/later'] = array(
+    'title' => t('Later'),
+		'page arguments' => array('grouped', 3),
+    'page callback' => 'regiomino_admin_incomingorders',
+		'access callback' => 'regiomino_admin_user_is_seller',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 1,
+  );
+	$items['admin/incomingorders/new'] = array(
+    'title' => t('Incoming orders (solo)'),
+    'page callback' => 'regiomino_admin_incomingorders',
+		'page arguments' => array('solo'),
+		'access callback' => 'regiomino_admin_user_is_seller',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+		'weight' => 1,
+  );
+	$items['admin/incomingorders/old'] = array(
+    'title' => t('Incoming orders (old)'),
+    'page callback' => 'regiomino_admin_incomingorders',
+		'page arguments' => array('old'),
+		'access callback' => 'regiomino_admin_user_is_seller',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+		'weight' => 2,
+  );
+	$items['admin/offers'] = array(
+    'title' => 'Angebotsverwaltung',
+    'page callback' => 'drupal_get_form',
+		'page arguments' => array('regiomino_admin_manage_offers_active'),
+    'access callback' => 'regiomino_admin_user_is_seller',
+    'file' => 'regiomino_admin.admin.inc',
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+		'type' => MENU_NORMAL_ITEM,
+  );
+	$items['admin/offers/active'] = array(
+    'title' => 'Aktive Angebote',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => 0,
+  );	
+	$items['admin/offers/unpublished'] = array(
+    'title' => 'Unveröffentlichte Angebote',
+    'page callback' => 'drupal_get_form',
+		'page arguments' => array('regiomino_admin_manage_offers_unpublished'),
+    'access callback' => 'regiomino_admin_user_is_seller',
+    'file' => 'regiomino_admin.admin.inc',
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+		'weight' => 1,
+  );
+	$items['admin/offers/templates'] = array(
+    'title' => 'Angebotsvorlagen',
+    'page callback' => 'drupal_get_form',
+		'page arguments' => array('regiomino_admin_manage_offers_templates'),
+    'access callback' => 'regiomino_admin_user_is_seller',
+    'file' => 'regiomino_admin.admin.inc',
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+		'weight' => 2,
+  );
+	$items['admin/offers/archive'] = array(
+    'title' => 'Archivierte Angebote',
+    'page callback' => 'drupal_get_form',
+		'page arguments' => array('regiomino_admin_manage_offers_archive'),
+    'access callback' => 'regiomino_admin_user_is_seller',
+    'file' => 'regiomino_admin.admin.inc',
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_TASK,
+		'weight' => 3,
+  );
+	$items['admin/offers/create'] = array(
+    'title' => 'Angebot erstellen',
+    'page callback' => 'drupal_get_form',
+		'page arguments' => array('regiomino_admin_manage_offers_create'),
+    'access callback' => 'regiomino_admin_user_is_seller',
+    'file' => 'regiomino_admin.admin.inc',
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_ACTION,
+		'weight' => 3,
+  );
+	$items['admin/offers/edit/%'] = array(
+    'title' => 'Angebot bearbeiten',
+    'page callback' => 'drupal_get_form',
+		'page arguments' => array('regiomino_admin_manage_offers_edit'),
+    'access callback' => 'regiomino_admin_seller_owns_node',
+		'access arguments' => array(3),
+    'file' => 'regiomino_admin.admin.inc',
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_LOCAL_ACTION,
+		'weight' => 4,
+  );
+	return $items;
+}
+
+function regiomino_admin_manage_offers_edit_validate($form, &$form_state) {
+	$errors = regiomino_admin_manage_offers_offervalidation($form_state);
+	foreach($errors as $name=>$message) {
+		form_set_error($name, $message);
+	}
+}
+
+function regiomino_admin_manage_offers_create_validate($form, &$form_state) {
+	$errors = regiomino_admin_manage_offers_offervalidation($form_state);
+	foreach($errors as $name=>$message) {
+		form_set_error($name, $message);
+	}
+}
+
+function regiomino_admin_manage_offers_offervalidation($form_state) {
+	$errors = array();
+	//Validate packingunit_first
+	$packingunit_first = floatval(str_replace(',', '.', $form_state['values']['packingunit_first']));
+	if(!is_numeric($packingunit_first) || $packingunit_first <= 0) {
+		$errors['packingunit_first'] = 'Bitte geben Sie ein, in welcher Einheit ihr Produkt verkauft wird (Bsp.: "0,33 l")';
+	}
+	
+	//Validate stock
+	$stock = intval($form_state['values']['stock']);
+	if(!is_numeric($stock) || $stock <= 0) {
+		$errors['stock'] = 'Bitte geben Sie ein, wie viele Einheiten des Produktes Sie vorrätig haben (Bsp.: "500")';
+	}
+	
+	//Validate fields from tradingprices
+	if(empty($form_state['values']['tradingprice_1_amount'])) {
+		$errors['tradingprice_1_amount'] = 'Bitte definieren Sie mindestens 1 Gebinde in dem Ihr Produkt verkauft wird. Wenn Sie das Produkt in Einzelstücken verkaufen definieren Sie ein Gebinde mit Anzahl 1.';
+	}
+	$amountrevenue = array();
+	for($i=1; $i<=5; $i++) {
+		//Validate if amount is larger than 0 when set
+		if(!empty($form_state['values']['tradingprice_' . $i . '_amount'])) {
+			if($form_state['values']['tradingprice_' . $i . '_amount'] > $form_state['values']['stock']) {
+				$errors['tradingprice_' . $i . '_amount'] = 'Bitte definieren Sie keine Gebinde die größer sind als Ihr Bestand.';
+			}
+			$tradingprice_amount = intval($form_state['values']['tradingprice_' . $i . '_amount']);
+			if(!is_numeric($tradingprice_amount) || $tradingprice_amount <= 0) {
+				$errors['tradingprice_' . $i . '_amount'] = 'Bitte geben Sie in der Spalte "Anzahl" in Zeile ' . $i . ' Ihrer Gebinde einen Wert größer 0 ein oder lassen Sie das Feld leer.';
+			}
+			//If amount is set, then validate if net revenue is set to larger than 0
+			if(!empty($form_state['values']['tradingprice_' . $i . '_netrevenue'])) {
+				$tradingprice_netrevenue = floatval(str_replace(',', '.', $form_state['values']['tradingprice_' . $i . '_netrevenue']));
+				if(!is_numeric($tradingprice_netrevenue) || $tradingprice_netrevenue <= 0) {
+					$errors['tradingprice_' . $i . '_netrevenue'] = 'Bitte geben Sie in der Spalte "Netto-Erlös" in Zeile ' . $i . ' ein, wie hoch Ihr Erlös bei einem Verkauf der in der Vorspalte genannten Anzahl sein soll.';
+				}
+			}
+			//If amount is set, then store amount and netrevenue in separate array to validate price logic later on
+			$amountrevenue[$form_state['values']['tradingprice_' . $i . '_customertype']][] = array(
+				'amount' => $tradingprice_amount,
+				'revenue' => $tradingprice_netrevenue,
+				'key' => $i,
+			);
+		}
+	}
+	$type = 'private';
+	for($j=0; $j<2; $j++) {
+		usort($amountrevenue[$type], 'regiomino_admin_sort_amountrevenue');
+		for($i=1; $i<count($amountrevenue[$type]); $i++) {
+			if($amountrevenue[$type][$i]['revenue'] / $amountrevenue[$type][$i]['amount'] > $amountrevenue[$type][$i-1]['revenue'] / $amountrevenue[$type][$i-1]['amount']) {
+				$errors['tradingprice_' . $amountrevenue[$type]['key'] . '_revenue'] = 'Größere Gebinde dürfen heruntergerechnet keinen höheren Stückpreis haben als kleinere Gebinde.';
+			}
+			if($amountrevenue[$type][$i]['amount'] == $amountrevenue[$type][$i-1]['amount']) {
+				$errors['tradingprice_' . $amountrevenue[$type]['key'] . '_revenue'] = 'Bitte geben Sie keine Gebindegrößen doppelt ein.';
+			}
+		}
+		$type = 'commercial';
+	}
+	
+	//Validate delay
+	if(!empty($form_state['values']['delay'])) {
+		$delay = intval($form_state['values']['delay']);
+		if(!is_numeric($delay) || $delay < 0) {
+			$errors['delay'] = 'Bitte geben Sie ein, wie viele Stunden vor dem Liefertag die Bestellung erfolgen muss.';
+		}
+	}
+	
+	
+	if($form_state['values']['expiryselection'] == 'usage' && !empty($form_state['values']['usewithin'])) {
+		//Validate use within day range
+		$usewithin = intval($form_state['values']['usewithin']);
+		if(!is_numeric($usewithin) || $usewithin <= 0) {
+			$errors['usewithin'] = 'Bitte geben Sie ein, in welchem Zeitraum (in Tagen) Ihr Produkt verbraucht werden muss.';
+		}
+	}
+	
+	//Validate shipping weight
+	$shippingweight = intval($form_state['values']['shippingweight']);
+	if(!is_numeric($shippingweight) || $shippingweight < 0) {
+		$errors['shippingweight'] = 'Bitte geben Sie ein, wieviel Ihr Produkt im Versand wiegt (d.h. inkl. eventueller Trägerverpackungen o.ä.).';
+	}
+
+	return $errors;
+}
+
+function regiomino_admin_sort_amountrevenue($a, $b) {
+	if ($a['amount'] == $b['amount']) {
+			return 0;
+	}
+	return ($a['amount'] < $b['amount']) ? -1 : 1;
+}
+
+function regiomino_admin_manage_offers_create_submit($form, &$form_state) {
+	$createtemplate = FALSE;
+	if($form_state['values']['saveastemplate']) $createtemplate = TRUE;
+	drupal_set_message('Der Angebotsdatensatz wurde gespeichert und ist in Ihrer Angebotsverwaltung unter "Unveröffentlichte Angebote" zu finden. Dort können Sie das Angebot nachträglich bearbeiten oder für den Verkauf veröffentlichen.');
+	regiomino_admin_manage_offers_createnewnode($form_state, $createtemplate);
+	drupal_goto('admin/offers/unpublished');
+}
+
+function regiomino_admin_manage_offers_createnewnode($form_state, $createtemplate = FALSE, $publishrightaway = FALSE) {
+
+	global $user;
+	
+	//Define new node
+	$new_node = new stdClass();
+	$new_node->type = 'offer';
+	$new_node->is_new = TRUE;
+	
+	//Store title
+	$new_node->title = $form_state['values']['title'];
+	
+	//Prepare object
+	node_object_prepare($new_node);
+	$new_node->language = 'de';
+	$new_node->path['pathauto'] = TRUE;
+	
+	//Store author
+	$new_node->uid = $user->uid;
+	
+	//Store states
+	if($publishrightaway) {
+		$new_node->status = 1;
+	}
+	else {
+		$new_node->status = 0;
+	}
+	$templatenode->model = 0;
+	$new_node->soldout = 0;
+	
+	//Store field_image
+	unset($new_node->field_image[LANGUAGE_NONE]);
+	for($i=0; $i<5; $i++) {
+		if((is_array($form_state['values']['image_' . $i]) && $form_state['values']['image_' . $i]['fid'] > 0) || (!is_array($form_state['values']['image_' . $i]) && $form_state['values']['image_' . $i] > 0)) {
+			
+			if(is_array($form_state['values']['image_' . $i])) $imageobject = file_load($form_state['values']['image_' . $i]['fid']);
+			if(!is_array($form_state['values']['image_' . $i])) $imageobject = file_load($form_state['values']['image_' . $i]);
+			$imageobject->status = FILE_STATUS_PERMANENT;
+			$imageobject->display = 1;
+			$imageobject->description = '';
+			$imageobject = file_copy($imageobject, 'public://', FILE_EXISTS_RENAME);
+			$new_node->field_image[LANGUAGE_NONE][] = (array)$imageobject;
+		}
+	}
+	//Store field_packingunit
+	$new_node->field_packingunit[LANGUAGE_NONE][0]['first'] = $form_state['values']['packingunit_first'];
+	$new_node->field_packingunit[LANGUAGE_NONE][0]['second'] = $form_state['values']['packingunit_second'];
+	
+	//Store field_shippingweight
+	$new_node->field_shippingweight[LANGUAGE_NONE][0]['value'] = $form_state['values']['shippingweight'];
+	
+	//Store field_price (DEPRECATED)
+	$new_node->field_price[LANGUAGE_NONE][0]['value'] = $form_state['values']['tradingprice_1_gross'];
+	
+	//Store field_salestax
+	$new_node->field_salestax[LANGUAGE_NONE][0]['value'] = $form_state['values']['vat'];
+	
+	//Store field_stock
+	$new_node->field_stock[LANGUAGE_NONE][0]['value'] = $form_state['values']['stock'];
+	
+	//Store field_category
+	$new_node->field_category[LANGUAGE_NONE][0]['tid'] = $form_state['values']['category1'];
+	if(isset($form_state['values']['category2']) && !empty($form_state['values']['category2'])) $new_node->field_category[LANGUAGE_NONE][1]['tid'] = $form_state['values']['category2'];
+	
+	//Store field_expiry
+	$new_node->field_expiry[LANGUAGE_NONE][0]['first'] = $form_state['values']['usewithin'];
+	$new_node->field_expiry[LANGUAGE_NONE][0]['second'] = $form_state['values']['cooling'];
+	
+	//Store field_pickupdelay
+	$new_node->field_pickupdelay[LANGUAGE_NONE][0]['value'] = $form_state['values']['delay'];
+	
+	//Store field_duration
+	$dateformat = explode('+', date('c', mktime(0, 0, 0, date("m"), date("d")+7, date("Y"))));
+	$new_node->field_duration[LANGUAGE_NONE][0] = array(
+		'value' => $dateformat[0],
+		'timezone' => 'Europe/Berlin',
+		'timezone_db' => 'Europe/Berlin',
+		'date_type' => 'date',
+	);
+	
+	//Store field_renewal
+	$new_node->field_renewal[LANGUAGE_NONE][0]['value'] = 1;
+	
+	//Store body
+	$new_node->body[LANGUAGE_NONE][0] = $form_state['values']['description'];
+	
+	//Store field_importantnotices
+	$new_node->field_importantnotices[LANGUAGE_NONE][0] = $form_state['values']['importantnotices'];
+	
+	//Store field_origin
+	$new_node->field_origin[LANGUAGE_NONE][0] = array(
+		'country' => $form_state['values']['country'],
+		'administrative_area' => NULL,
+		'sub_administrative_area' => NULL,
+		'locality' => $form_state['values']['locality'],
+		'dependent_locality' => NULL,
+		'postal_code' => $form_state['values']['postal_code'],
+		'thoroughfare' => '',
+		'premise' => '',
+		'sub_premise' => NULL,
+		'organisation_name' => $form_state['values']['organisation_name'],
+		'name_line' => NULL,
+		'first_name' => NULL,
+		'last_name' => NULL,
+		'data' => NULL,
+	);
+	
+	//Store field_labels
+	foreach($form_state['values']['qualitylabels'] as $labelid) {
+		if($labelid) $new_node->field_labels[LANGUAGE_NONE][]['target_id'] = $labelid;
+	}
+	
+	//Submit and save node
+	$new_node = node_submit($new_node);
+	node_save($new_node);
+	
+	//Add tradingprices to node
+	$amountrevenue = array();
+	for($i=1; $i<=5; $i++) {
+		if(!empty($form_state['values']['tradingprice_' . $i . '_amount'])) {
+			$amountrevenue[$form_state['values']['tradingprice_' . $i . '_customertype']][] = array(
+				'amount' => intval($form_state['values']['tradingprice_' . $i . '_amount']),
+				'revenue' => floatval(str_replace(',', '.', $form_state['values']['tradingprice_' . $i . '_netrevenue'])),
+				'customertype' => $form_state['values']['tradingprice_' . $i . '_customertype'],
+			);
+		}
+	}
+
+	$type = 'private';
+	for($j=0; $j<2; $j++) {
+		usort($amountrevenue[$type], 'regiomino_admin_sort_amountrevenue');
+		for($i=1; $i<=count($amountrevenue[$type]); $i++) {
+			regiomino_offer_add_tradingunit($new_node, $amountrevenue[$type][$i-1]['amount'], $amountrevenue[$type][$i-1]['revenue'], $amountrevenue[$type][$i-1]['customertype']);
+		}
+		$type = 'commercial';
+	}
+	
+	//Save as template if requested
+	if($createtemplate) {
+		$templatenode = clone $new_node;
+		$templatenode->nid = NULL;
+		$templatenode->vid = NULL;
+		$templatenode->tnid = NULL;
+		$templatenode->title = $templatenode->title;
+		node_save($templatenode);
+		$templatenode->model = 1;
+		$templatenode->status = 0;
+		node_save($templatenode);
+	}
+	
+}
+
+function regiomino_admin_manage_offers_edit_submit($form, &$form_state) {
+
+	$tmp = explode('/', $form['#action']);
+	$new_node = node_load($tmp[4]);
+		
+	//Check if price info has changed. If so, set the node to soldout and create a new one
+	$createnewnode = FALSE;
+	if(!$createnewnode && $new_node->field_salestax[LANGUAGE_NONE][0]['value'] != $form_state['values']['vat']) $createnewnode = TRUE;
+	if(!$createnewnode && $new_node->field_stock[LANGUAGE_NONE][0]['value'] != $form_state['values']['stock']) $createnewnode = TRUE;
+	if(!$createnewnode && $new_node->field_packingunit[LANGUAGE_NONE][0]['first'] != $form_state['values']['packingunit_first']) $createnewnode = TRUE;
+	if(!$createnewnode && $new_node->field_packingunit[LANGUAGE_NONE][0]['second'] != $form_state['values']['packingunit_second']) $createnewnode = TRUE;
+
+	$amountrevenue = array();
+	for($i=1; $i<=5; $i++) {
+		if(!empty($form_state['values']['tradingprice_' . $i . '_amount'])) {
+			$amountrevenue[] = array(
+				'amount' => intval($form_state['values']['tradingprice_' . $i . '_amount']),
+				'revenue' => floatval(str_replace(',', '.', $form_state['values']['tradingprice_' . $i . '_netrevenue'])),
+			);
+		}
+	}	
+	if(!$createnewnode && count($new_node->field_tradingunits[LANGUAGE_NONE]) != count($amountrevenue)) $createnewnode = TRUE;
+	foreach($new_node->field_tradingunits[LANGUAGE_NONE] as $index=>$tufci) {
+		$fci = field_collection_item_load($tufci['value']);
+		if(!$createnewnode && $amountrevenue[$index]['amount'] != $fci->field_tu_size[LANGUAGE_NONE][0]['value']) $createnewnode = TRUE;
+		if(!$createnewnode && $amountrevenue[$index]['revenue'] != $fci->field_tu_revenue[LANGUAGE_NONE][0]['value']) $createnewnode = TRUE;
+	}
+			
+	if($createnewnode && $new_node->status) {
+		regiomino_admin_manage_offers_createnewnode($form_state, FALSE, $new_node->status);
+		$new_node->soldout = 1;
+		$dateformat = explode('+', date('c', mktime(0, 0, 0, date("m"), date("d"), date("Y"))));
+		$new_node->field_duration[LANGUAGE_NONE][0] = array(
+			'value' => $dateformat[0],
+			'timezone' => 'Europe/Berlin',
+			'timezone_db' => 'Europe/Berlin',
+			'date_type' => 'date',
+		);
+		node_save($new_node);
+	}
+	else {
+		global $user;
+		
+		//Store title
+		$new_node->title = $form_state['values']['title'];
+		
+		//Store field_image
+		unset($new_node->field_image[LANGUAGE_NONE]);
+		for($i=0; $i<5; $i++) {
+			
+			if((is_array($form_state['values']['image_' . $i]) && $form_state['values']['image_' . $i]['fid'] > 0) || (!is_array($form_state['values']['image_' . $i]) && $form_state['values']['image_' . $i] > 0)) {
+			
+				if(is_array($form_state['values']['image_' . $i])) $imageobject = file_load($form_state['values']['image_' . $i]['fid']);
+				if(!is_array($form_state['values']['image_' . $i])) $imageobject = file_load($form_state['values']['image_' . $i]);
+			
+			
+			
+				$imageobject = file_load($form_state['values']['image_' . $i]);
+				$imageobject->status = FILE_STATUS_PERMANENT;
+				$imageobject->display = 1;
+				$imageobject->description = '';
+				$imageobject = file_copy($imageobject, 'public://', FILE_EXISTS_RENAME);
+				$new_node->field_image[LANGUAGE_NONE][] = (array)$imageobject;
+			}
+		}
+		//Store field_packingunit
+		$new_node->field_packingunit[LANGUAGE_NONE][0]['first'] = $form_state['values']['packingunit_first'];
+		$new_node->field_packingunit[LANGUAGE_NONE][0]['second'] = $form_state['values']['packingunit_second'];
+		
+		//Store field_price (DEPRECATED)
+		$new_node->field_price[LANGUAGE_NONE][0]['value'] = $form_state['values']['tradingprice_1_gross'];
+		
+		//Store field_salestax
+		$new_node->field_salestax[LANGUAGE_NONE][0]['value'] = $form_state['values']['vat'];
+		
+		//Store field_stock
+		$new_node->field_stock[LANGUAGE_NONE][0]['value'] = $form_state['values']['stock'];
+		
+		//Store field_shippingweight
+		$new_node->field_shippingweight[LANGUAGE_NONE][0]['value'] = $form_state['values']['shippingweight'];
+		
+		//Store field_category
+		$new_node->field_category[LANGUAGE_NONE][0]['tid'] = $form_state['values']['category1'];
+		if(isset($form_state['values']['category2']) && !empty($form_state['values']['category2'])) $new_node->field_category[LANGUAGE_NONE][1]['tid'] = $form_state['values']['category2'];
+		
+		//Store field_expiry
+		$new_node->field_expiry[LANGUAGE_NONE][0]['first'] = $form_state['values']['usewithin'];
+		$new_node->field_expiry[LANGUAGE_NONE][0]['second'] = $form_state['values']['cooling'];
+		
+		//Store field_pickupdelay
+		$new_node->field_pickupdelay[LANGUAGE_NONE][0]['value'] = $form_state['values']['delay'];
+		
+		//Store body
+		$new_node->body[LANGUAGE_NONE][0] = $form_state['values']['description'];
+		
+		//Store field_importantnotices
+		$new_node->field_importantnotices[LANGUAGE_NONE][0] = $form_state['values']['importantnotices'];
+		
+		//Store field_origin
+		$new_node->field_origin[LANGUAGE_NONE][0] = array(
+			'country' => $form_state['values']['country'],
+			'administrative_area' => NULL,
+			'sub_administrative_area' => NULL,
+			'locality' => $form_state['values']['locality'],
+			'dependent_locality' => NULL,
+			'postal_code' => $form_state['values']['postal_code'],
+			'thoroughfare' => '',
+			'premise' => '',
+			'sub_premise' => NULL,
+			'organisation_name' => $form_state['values']['organisation_name'],
+			'name_line' => NULL,
+			'first_name' => NULL,
+			'last_name' => NULL,
+			'data' => NULL,
+		);
+		
+		//Store field_labels
+		unset($new_node->field_labels[LANGUAGE_NONE]);
+		foreach($form_state['values']['qualitylabels'] as $labelid) {
+			if($labelid) $new_node->field_labels[LANGUAGE_NONE][]['target_id'] = $labelid;
+		}
+		
+		foreach ($new_node->field_tradingunits[LANGUAGE_NONE] as $key => $value) {
+			// Build array of field collection values.
+			$field_collection_item_values[] = $value['value'];
+			// Unset them.  
+			unset($new_node->field_tradingunits[LANGUAGE_NONE][$key]);
+		}
+		// Delete field collection items.
+		entity_delete_multiple('field_collection_item', $field_collection_item_values);
+		
+		//Save node
+		node_save($new_node);
+		
+		//Add tradingprices to node
+		$amountrevenue = array();
+		for($i=1; $i<=5; $i++) {
+			if(!empty($form_state['values']['tradingprice_' . $i . '_amount'])) {
+				$amountrevenue[$form_state['values']['tradingprice_' . $i . '_customertype']][] = array(
+					'amount' => intval($form_state['values']['tradingprice_' . $i . '_amount']),
+					'revenue' => floatval(str_replace(',', '.', $form_state['values']['tradingprice_' . $i . '_netrevenue'])),
+					'customertype' => $form_state['values']['tradingprice_' . $i . '_customertype'],
+				);
+			}
+		}
+
+		$type = 'private';
+		for($j=0; $j<2; $j++) {
+			usort($amountrevenue[$type], 'regiomino_admin_sort_amountrevenue');
+			for($i=1; $i<=count($amountrevenue[$type]); $i++) {
+				regiomino_offer_add_tradingunit($new_node, $amountrevenue[$type][$i-1]['amount'], $amountrevenue[$type][$i-1]['revenue'], $amountrevenue[$type][$i-1]['customertype']);
+			}
+			$type = 'commercial';
+		}
+		
+	}
+	
+	drupal_set_message('Ihre Änderungen wurden gespeichert.');
+}
+
+function regiomino_admin_theme($existing, $type, $theme, $path) {
+	return array(
+		'regiomino_admin_theme_incomingorders_grouped' => array(
+			'template' => 'regiomino_admin_incomingorders_grouped',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_admin_theme_incomingorders_solo' => array(
+			'template' => 'regiomino_admin_incomingorders_solo',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_admin_theme_incomingorders_old' => array(
+			'template' => 'regiomino_admin_incomingorders_old',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_admin_manage_offers_create' => array(
+			'template' => 'regiomino_admin_manage_theme_offers_create',
+			'render element' => 'form',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_admin_manage_offers_edit' => array(
+			'template' => 'regiomino_admin_manage_theme_offers_edit',
+			'render element' => 'form',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'offer_thumb_upload' => array(
+				'render element' => 'form',
+		),
+	);
+}
+
+function theme_offer_thumb_upload($variables) {
+
+    // $element = $variables['element'];
+
+    // if (isset($element['#file']->uri)) {
+        // $output = '<div id="edit-logo-ajax-wrapper"><div class="form-item form-type-managed-file form-item-logo"><span class="file">';
+        // $output .= '<img height="50px" src="' . file_create_url($element['#file']->uri) . '" />';
+        // $output .= '</span><input type="submit" id="edit-' . $element['#name'] . '-remove-button" name="' . $element['#name'] . '_remove_button" value="Remove" class="form-submit ajax-processed">';
+        // $output .= '<input type="hidden" name="' . $element['#name'] . '[fid]" value="' . $element['#file']->fid . '">';
+
+        // return $output;
+    // }
+		
+		// $form = $variables['form'];
+		// watchdog('sometest', print_r($form, TRUE));
+		// $form['#markup']=theme('image_style', array('style_name' => 'thumbnail', 'path' => file_build_uri(file_uri_target($form['#file']->uri)))).$form['filename']['#markup'];
+		// $output = drupal_render_children($form);
+		// return $output;
+		
+		
+		
+				
+		$form = $variables['form'];		
+		if (isset($form['#file']->uri)) {
+			// $form['filename']['#markup'] = theme('image', array('path' => file_build_uri(file_uri_target($form['#file']->uri)))) . $form['filename']['#markup'];
+			$form['filename']['#markup'] = '<img height="150px" src="' . file_create_url($form['#file']->uri) . '" />' . $form['filename']['#markup'];
+		}
+		$output = drupal_render_children($form);
+		return $output;
+}
+
+function regiomino_admin_allorders_access() {
+	global $user;
+	$account = user_load($user->uid);
+	$return = FALSE;
+	return in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
+	if($return) return $return;
+	return in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
+	if($return) return $return;
+}
+
+function regiomino_admin_paymenttasks_access() {
+	global $user;
+	$account = user_load($user->uid);
+	return in_array('Redakteur', $account->roles) ? TRUE : FALSE;
+}
+
+function regiomino_admin_user_has_role() {
+	global $user;
+	if(regiomino_admin_user_is_admin()) return TRUE;
+	if($user->uid == 6127 || $user->uid == 6643) return TRUE;
+	return in_array('Redakteur', $user->roles) ? TRUE : FALSE;
+}
+
+function regiomino_admin_user_is_seller() {
+	global $user;
+	if(regiomino_admin_user_is_admin()) return TRUE;
+	return in_array('Verkäufer', $user->roles) ? TRUE : FALSE;
+}
+
+function regiomino_admin_user_is_admin() {
+	global $user;
+	if($user->uid == 1) return TRUE;
+}
+
+function regiomino_admin_seller_owns_node($nid) {
+	global $user;
+	if(regiomino_admin_user_is_admin()) return TRUE;
+	if(in_array('Verkäufer', $user->roles)) {
+		$nodeobject = node_load($nid);
+		if($nodeobject->uid == $user->uid) return TRUE;
+	}
+}
+
+function regiomino_admin_median($zahlen_array = array()) {
+  $anzahl = count($zahlen_array);
+  if($anzahl == 0 ){
+    return false;
+  }
+  sort($zahlen_array);
+  if($anzahl % 2 == 0){
+    //gerade Anzahl => der Median ist das arithmetische Mittel der beiden mittleren Zahlen
+    return ($zahlen_array[ ($anzahl/2) - 1 ] + $zahlen_array[ $anzahl/2 ]) / 2 ;
+  } else {    
+    //ungerade Anzahl => der mittlere Wert ist der Median    
+    return $zahlen_array[$anzahl/2];
+  }
+}
+
+function regiomino_admin_topsellers_filterform($form, &$form_state) {
+	
+	$query = new EntityFieldQuery;
+	$picker = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'shipper_profile')
+		->propertyCondition('status', 1)
+		->execute();
+	$profiles = entity_load('node', array_keys($picker['node']));
+	$allpickers = array();
+	
+	foreach($profiles as $nid=>$profileobject) {
+		if(isset($profileobject->field_delivery_options[LANGUAGE_NONE][1])) {
+			foreach($profileobject->field_delivery_options[LANGUAGE_NONE] as $delta=>$fci) {
+				$fcitem = field_collection_item_load($fci['value']);
+				$allpickers[$fcitem->item_id] = $profileobject->title . ' (' . $fcitem->item_id . ')';
+			}
+		}
+		else {
+			$allpickers[$profileobject->field_delivery_options[LANGUAGE_NONE][0]['value']] = $profileobject->title;
+		}
+	}
+	$queryparams = drupal_get_query_parameters();
+	$tmp = explode('-', $_SESSION['geolocation_data']['deliveryoption']);
+	$pickerfci = $tmp[7];
+	$form['#method'] = 'get';
+	$form['allordersfilter']['pickerfci'] = array(
+		'#type' => 'select',
+		'#options' => $allpickers,
+		'#multiple' => FALSE,
+		'#size' => 4,
+		'#default_value' => (isset($queryparams['pickerfci']) && !empty($queryparams['pickerfci'])) ? $queryparams['pickerfci'] : $pickerfci,
+		'#description' => 'Wenn kein Lieferant ausgewählt ist, wird der Lieferant für die gewählte Lieferstrecke aus dem Eingangspopup zur Berechnung der Topseller genutzt',
+		'#title' => 'Lieferant auswählen',
+	);
+	$form['allordersfilter']['timerange'] = array(
+		'#type' => 'textfield',
+		'#default_value' => (isset($queryparams['timerange']) && !empty($queryparams['timerange'])) ? $queryparams['timerange'] : 12,
+		'#description' => 'Da viele Produkte sich automatisch verlängern, werden die Umsätze dieser Produkte zusammenaddiert. Das erfordert die Angabe eines Zeitraums für den die Topseller ermittelt werden sollen. Standard ist hier 12 Wochen.',
+		'#size' => 3,
+		'#title' => 'Zeitraum in Wochen',
+	);
+	$form['allordersfilter']['count'] = array(
+		'#type' => 'textfield',
+		'#default_value' => (isset($queryparams['count']) && !empty($queryparams['count'])) ? $queryparams['count'] : 10,
+		'#description' => 'Die Anzahl an Ergebnissen für die Abfrage. Standard ist hier 10.',
+		'#size' => 3,
+		'#title' => 'Anzahl an Ergebnissen',
+	);
+	$form['allordersfilter']['state'] = array(
+		'#type' => 'select',
+		'#options' => array(
+			'0' => 'Abgelaufen',
+			'1' => 'Aktiv',
+		),
+		'#multiple' => TRUE,
+		'#size' => 2,
+		'#default_value' => (isset($queryparams['state']) && !empty($queryparams['state'])) ? $queryparams['state'] : 1,
+		'#description' => 'Standardmäßig werden nur Angebote angezeigt, die auch noch aktiv sind.',
+		'#title' => 'Angebotsstatus',
+	);
+	$form['allordersfilter']['submit'] = array(
+		'#value' => t('Submit'),
+		'#type' => 'submit',
+	);
+	return $form;
+}
+
+function regiomino_admin_allorders_filterform($form, &$form_state) {
+	$queryparams = drupal_get_query_parameters();
+	$form['#method'] = 'get';
+	$form['allordersfilter']['order_id'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Pos.'),
+		'#default_value' => $queryparams['order_id'],
+		'#size' => 5,
+	);
+	$form['allordersfilter']['shipping'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Best.'),
+		'#default_value' => $queryparams['shipping'],
+		'#size' => 5,
+	);
+	$form['allordersfilter']['order_process_id'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Vrg.'),
+		'#default_value' => $queryparams['order_process_id'],
+		'#size' => 5,
+	);
+	$form['allordersfilter']['uid'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Kunden #'),
+		'#default_value' => $queryparams['uid'],
+		'#size' => 5,
+	);
+	$form['allordersfilter']['delivery_first_name'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Kunde Vorname'),
+		'#default_value' => $queryparams['delivery_first_name'],
+		'#size' => 20,
+	);
+	$form['allordersfilter']['delivery_last_name'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Kunde Nachname'),
+		'#default_value' => $queryparams['delivery_last_name'],
+		'#size' => 20,
+	);
+	$form['allordersfilter']['nid'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Angebot #'),
+		'#default_value' => $queryparams['nid'],
+		'#size' => 5,
+	);
+	$form['allordersfilter']['product_name'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Bezeichnung'),
+		'#default_value' => $queryparams['product_name'],
+		'#size' => 20,
+	);
+	$form['allordersfilter']['seller_company'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Verkäufer'),
+		'#default_value' => $queryparams['seller_company'],
+		'#size' => 20,
+	);
+	$form['allordersfilter']['pickup_name'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Abholung durch'),
+		'#default_value' => $queryparams['pickup_name'],
+		'#size' => 20,
+	);
+	$form['allordersfilter']['seller_postal_code'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Abholung in (PLZ)'),
+		'#default_value' => $queryparams['seller_postal_code'],
+		'#size' => 15,
+	);
+	$form['allordersfilter']['shipper_name'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Auslieferung durch'),
+		'#default_value' => $queryparams['shipper_name'],
+		'#size' => 20,
+	);
+	$form['allordersfilter']['delivery_postal_code'] = array(
+		'#type' => 'textfield',
+		'#attributes' => array('placeholder' => 'Auslieferung in (PLZ)'),
+		'#default_value' => $queryparams['delivery_postal_code'],
+		'#size' => 15,
+	);
+	$form['allordersfilter']['order_status'] = array(
+		'#type' => 'select',
+		'#options' => array(
+			'completed' => t('Payment completed'),
+			'canceled' => t('Canceled'),
+			'pending' => t('Payment pending'),
+			'delivered' => t('Delivered'),
+			'billed' => t('Billed'),
+			'processing' => t('Processing'),
+		),
+		'#multiple' => TRUE,
+		'#size' => 6,
+		'#default_value' => $queryparams['order_status'],
+	);
+	$form['allordersfilter']['shipping_type'] = array(
+		'#type' => 'select',
+		'#options' => array(
+			'bringlivery' => t('Bringlivery'),
+			'centralpickup' => t('Pickup'),
+		),
+		'#multiple' => TRUE,
+		'#size' => 2,
+		'#default_value' => $queryparams['shipping_type'],
+	);
+	$frequencyfield = field_info_field('field_frequency');
+	$allowed_values_frequency = list_allowed_values($frequencyfield);
+	$allowed_values = array();
+	foreach($allowed_values_frequency as $key=>$value) {
+		$allowed_values['s:9:"frequency";i:' . $key . ';'] = $value;
+	}
+	$form['allordersfilter']['frequency'] = array(
+		'#type' => 'select',
+		'#options' => $allowed_values,
+		'#default_value' => $queryparams['frequency'],
+		'#empty_option' => 'Alle',
+	);
+	$form['allordersfilter']['submit'] = array(
+		'#value' => t('Filter'),
+		'#type' => 'submit',
+	);
+	return $form;
+}

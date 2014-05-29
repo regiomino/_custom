@@ -1,0 +1,6 @@
+name = Regiomino Feature Slider
+description = Adds Regiomino specific functionality to switch between blocks in region-highlighted on menu hover
+core = 7.x
+package = Regiomino
+files[] = regiomino_featureslider.module
+dependencies[] = views

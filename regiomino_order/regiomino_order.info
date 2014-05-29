@@ -1,0 +1,8 @@
+name = Regiomino Order
+description = Regiomino order management
+core = 7.x
+package = Regiomino
+configure = admin/config/regiomino/order
+files[] = regiomino_order.module
+files[] = regiomino_order.install
+dependencies[] = custom_pub

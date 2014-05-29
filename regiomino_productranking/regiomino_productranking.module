@@ -1,0 +1,858 @@
+<?php
+
+/**
+* Implementation of hook_menu().
+*/
+function regiomino_productranking_menu() {
+	$items = array();
+	$items['angebot'] = array(
+    'page callback' => 'regiomino_productranking_goto_gemuese',
+    'access arguments' => array('access content'),
+	);
+	$items['angebote'] = array(
+    'page callback' => 'regiomino_productranking_goto_gemuese',
+    'access arguments' => array('access content'),
+	);
+	$items['ausprobieren'] = array(
+    'page callback' => 'regiomino_productranking_goto_front',
+    'access arguments' => array('access content'),
+	);
+	$items['angebote/%'] = array(
+    'page callback' => 'regiomino_productranking_display_category',
+    'access arguments' => array('access content'),
+	);
+	$items['produkte/%'] = array(
+    'page callback' => 'regiomino_productranking_display_category_with_search',
+    'page arguments' => array(1),
+    'access arguments' => array('access content'),
+	);
+/* 	$items['suche/%search_api_index'] = array(
+    'page callback' => 'regiomino_productranking_search',
+    'page arguments' => array(1),
+    'access arguments' => array('access content'),
+	); */
+ 	$items['suche/angebote/%'] = array(
+    'page callback' => 'regiomino_productranking_searchterm',
+    'access arguments' => array('access content'),
+	);
+	$items['admin/config/regiomino/productranking'] = array(
+    'title' => 'Regiomino productranking settings',
+    'description' => 'Make settings for regiomino productranking.',
+    'page callback' => 'drupal_get_form', // function called when path is requested
+    'page arguments' => array('regiomino_productranking_admin_settings'), // form id passed to the function
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'regiomino_productranking.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_productranking'),
+  );
+	$items['admin/config/regiomino/index'] = array(
+    'title' => 'Regiomino search index',
+    'description' => 'Index products for regiomino search',
+    'page callback' => 'drupal_get_form', // function called when path is requested
+    'page arguments' => array('regiomino_productranking_index'), // form id passed to the function
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'regiomino_productranking.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_productranking'),
+  );
+	$items['admin/config/regiomino/delete'] = array(
+    'title' => 'Regiomino search delete',
+    'description' => 'Delete products for regiomino search',
+    'page callback' => 'drupal_get_form', // function called when path is requested
+    'page arguments' => array('regiomino_productranking_delete'), // form id passed to the function
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'regiomino_productranking.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_productranking'),
+  );
+	return $items;
+}
+
+function regiomino_productranking_goto_front() {
+	drupal_goto();
+}
+
+function regiomino_productranking_goto_gemuese() {
+	drupal_goto('angebote/Gemüse');
+}
+
+function regiomino_productranking_theme($existing, $type, $theme, $path) {
+	return array(
+		'regiomino_productranking_theme_category' => array(
+			'template' => 'regiomino_productranking_category',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_productranking_theme_categorysearch' => array(
+			'template' => 'regiomino_productranking_categorysearch',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+	);
+}
+
+/**
+* Implementation of hook_block_info().
+*/
+function regiomino_productranking_block_info() {
+  $blocks['regiomino_search_input'] = array(
+    'info' => t('Regiomino Search input'), //The name that will appear in the block list.
+    'cache' => DRUPAL_CACHE_GLOBAL, //Default
+  );
+  return $blocks;
+}
+
+/**
+* Implementation of hook_block_view().
+*/
+function regiomino_productranking_block_view($delta = '') {
+  switch($delta){
+    case 'regiomino_search_input':
+			if(user_access('access content')){
+			 $block['content'] = drupal_get_form('regiomino_search_input_form');
+			}
+			return $block;
+	}
+}
+
+/**
+* Implementation of regiomino_search_input_form. form for adding selected quantities to cart.
+*/
+function regiomino_search_input_form($form, &$form_state) {
+	$form['searchinput']['input'] = array(
+		'#type' => 'textfield',
+		'#attributes' =>array('placeholder' => t('Your search term')),
+	);
+	$form['searchinput']['submit'] = array(
+		'#type' => 'submit',
+	);
+	return $form;
+}
+
+function regiomino_search_input_form_validate($form, &$form_state) {
+	if(!isset($form_state['values']['input']) || empty($form_state['values']['input'])) {
+		form_set_error('input', t('Please enter a search term.'));
+	}
+}
+
+function regiomino_search_input_form_submit($form, &$form_state) {
+	drupal_goto('suche/angebote/' . $form_state['values']['input']);
+}
+
+function regiomino_productranking_searchterm() {
+	$term = arg(2);
+	$return = 'No results';
+	$queryparams = drupal_get_query_parameters();
+	
+	if(!empty($term)) {
+		
+		$results = json_decode(regiomino_productranking_do_search($term, 100, 1, 'title,image,pickupdelay,duration,origin_locality,origin_country,sellerprofile_nid,sellerprofile_title,sellerprofile_locality,labels,_author,origin_lat,origin_lon,packingunit_first,packingunit_second', '_kategorie', 100));
+		
+		$documents = $results->documents;
+		$metadata = $results->metaData;
+		
+		if(!empty($documents)) {
+		
+			drupal_set_title(t('Search results for: "@term"', array('@term' => $term)));
+		
+			//Get sellers of offers
+			$sellers = array();
+			$labelentities = array();
+			foreach($documents as $key=>$offervalues) {
+			
+				//Sellers
+				$sellers[$offervalues->fields->_author[0]]['name'] = $offervalues->fields->sellerprofile_title[0];
+				if(isset($sellers[$offervalues->uid]['amount'])) {
+					$sellers[$offervalues->fields->_author[0]]['amount'] += 1;
+				}
+				else {
+					$sellers[$offervalues->fields->_author[0]]['amount'] = 1;
+				}
+				$sellers[$offervalues->fields->_author[0]]['active'] = FALSE;
+				if($queryparams['seller'] == $offervalues->fields->sellerprofile_nid[0]) {
+					$sellers[$offervalues->fields->_author[0]]['active'] = TRUE;
+				}
+				$sellers[$offervalues->fields->_author[0]]['link'] = url('suche/angebote/' . $term, array('query' => array('label' => $queryparams['label'], 'seller' => $offervalues->fields->sellerprofile_nid[0], 'category' => $queryparams['category'])));
+				$sellers[$offervalues->fields->_author[0]]['removelink'] = url('suche/angebote/' . $term, array('query' => array('label' => $queryparams['label'], 'category' => $queryparams['category'])));;
+				
+				//Labels
+				$labelentitiestmp = json_decode($offervalues->fields->labels[0]);
+				if(!empty($labelentitiestmp)) {
+					foreach($labelentitiestmp as $lkey=>$lval) {
+						$labelentities[$lval->target_id] = $lval;
+						$labelentities[$lval->target_id]->field_image[LANGUAGE_NONE][0]['uri'] = $lval->image_uri;
+						$labelentities[$lval->target_id]->link = url('suche/angebote/' . $term, array('query' => array('label' => $lval->target_id, 'seller' => $queryparams['seller'], 'category' => $queryparams['category'])));
+						$labelentities[$lval->target_id]->removelink = url('suche/angebote/' . $term, array('query' => array('seller' => $queryparams['seller'], 'category' => $queryparams['category'])));
+						if($queryparams['label'] == $lval->target_id) {
+							$labelentities[$lval->target_id]->selected = TRUE;
+						}
+					}
+				}
+			}
+			$offerstmp = regiomino_productranking_boost_entities_search($documents);
+			$offers = array();
+			foreach($offerstmp as $key=>$value) {
+				$tmpobject = new stdClass;
+				
+				$avlbpickupdates = regiomino_shipping_get_available_pickupdates($value->id, 'bringlivery', FALSE);
+				$avlbcpickupdates = regiomino_shipping_get_available_pickupdates($value->id, 'centralpickup', FALSE);
+				$delay = $value->fields->pickupdelay[0] * 3600;
+				$duration = strtotime($value->fields->duration[0]) + 86400;
+				$shipping = regiomino_shipping_get_latestorder($avlbpickupdates, $delay, $duration);
+				$centralpickup = regiomino_shipping_get_latestorder($avlbcpickupdates, $delay, $duration, 'centralpickup');
+
+				if(!empty($shipping['begin']) && !empty($centralpickup[0]['begin'])) {
+					$tmpobject->avlbpickupdates = $avlbpickupdates;
+					$tmpobject->avlbcpickupdates = $avlbcpickupdates;
+					$tmpobject->delay = $delay;
+					$tmpobject->duration = $duration;
+					$tmpobject->shipping = $shipping;
+					$tmpobject->centralpickup = $centralpickup;
+					$tmpobject->title = $value->fields->title[0];
+					$tmpobject->nid = $value->id;
+					$tmpobject->field_image[LANGUAGE_NONE][0]['uri'] = $value->fields->image[0];
+					$tmpobject->field_packingunit[LANGUAGE_NONE][0]['first'] = $value->fields->packingunit_first[0];
+					$tmpobject->field_packingunit[LANGUAGE_NONE][0]['second'] = $value->fields->packingunit_second[0];
+					$tmpobject->seller_profile->nid = $value->fields->sellerprofile_nid[0];
+					$tmpobject->seller_profile->title = $value->fields->sellerprofile_title[0];
+					$tmpobject->seller_profile->field_address[LANGUAGE_NONE][0]['locality'] = $value->fields->sellerprofile_locality[0];
+					$tmpobject->field_origin[LANGUAGE_NONE][0]['locality'] = $value->fields->origin_locality[0];
+					$tmpstore = json_decode($value->fields->labels[0]);
+					foreach($tmpstore as $tmpskey=>$tmpsvalue) {
+						$tmpobject->field_labels[LANGUAGE_NONE][$tmpskey]['target_id'] = $tmpsvalue->target_id;
+					}
+					
+					$availableforselection = FALSE;
+					switch($_SESSION['geolocation_data']['type']) {
+						case 'bringlivery':
+							$deliveryoptions = array_keys($tmpobject->avlbpickupdates);
+						break;
+						case 'centralpickup':
+							$deliveryoptions = array_keys($tmpobject->avlbcpickupdates);
+						break;
+					}
+					if(in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptions)) $availableforselection = TRUE;
+					$tmpobject->availableforselection = $availableforselection;
+					$nodeobject = node_load($value->id);
+					$tmpobject->discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
+					$tmpobject->originalprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
+					$tmpobject->baseprice = regiomino_offer_get_baseprice($nodeobject);
+				}
+				$offers[$value->id] = $tmpobject;
+			}
+			
+			$subcategory_terms = taxonomy_term_load_multiple($metadata->fields->{'term-facet._kategorie.terms'});
+			$subcategory_counts = $metadata->fields->{'term-facet._kategorie.counts'};
+			$sortedsubcatitems = array();
+			$counter = 0;
+			foreach($subcategory_terms as $key=>$value) {
+				$sortedsubcatitems[$key]['name'] = $value->name;
+				$sortedsubcatitems[$key]['amount'] = $subcategory_counts[$counter];
+				$sortedsubcatitems[$key]['active'] = FALSE;
+				$sortedsubcatitems[$key]['link'] = url('suche/angebote/' . $term , array('query' => array('label' => $queryparams['seller'], 'seller' => $queryparams['seller'], 'category' => $value->name)));
+				$sortedsubcatitems[$key]['removelink'] = url('suche/angebote/' . $term , array('query' => array('label' => $queryparams['seller'], 'seller' => $queryparams['seller'])));
+				if($queryparams['category'] == $value->name) {
+					$sortedsubcatitems[$key]['active'] = TRUE;
+				}
+				if($level == 'sub' && $correcttid == $key) $sortedsubcatitems[$key]['active'] = TRUE;
+				$counter++;
+			}
+			
+			//pass variables to template and return the result
+			$return =	theme('regiomino_productranking_theme_category', array(
+								'vars' => array(
+									'subcatitems' => $sortedsubcatitems,
+									'qualitylabels' => $labelentities,
+									'offers' => $offers,
+									'sellers' => $sellers,
+								),
+							));
+		}
+	}
+	return $return;
+}
+
+function regiomino_productranking_display_category_with_search($maincategory) {
+
+	$subcategory = arg(2);
+	if(!isset($subcategory)) {
+		drupal_set_title($maincategory);
+		$level = 'main';
+		//This means we are supposed to proceed on a main category level
+		$termbyname = taxonomy_get_term_by_name($maincategory);
+		if(count($termbyname) > 1) {
+			//This means there are two categories with the same name, this must be a subcategory that has the same name as the main category
+			foreach($termbyname as $key=>$value) {
+				//Check if one of the categories has a parent, this must be the subcategory
+				$parent = taxonomy_get_parents($key);
+				//We want the main category only, so store the tid of the one that does not have a parent as correcttid
+				if(empty($parent)) $correcttid = $key;
+			}
+		}
+		else {
+			//This means there's only one category with this name. We store the tid as correcttid.
+			$tmp = array_keys($termbyname);
+			$correcttid = $termbyname[$tmp[0]]->tid;
+		}
+	}
+	else {
+		drupal_set_title($subcategory);
+		$level = 'sub';
+		//This means we are supposed to proceed on a sub category level
+		$termbyname = taxonomy_get_term_by_name($subcategory);
+		if(count($termbyname) > 1) {
+			//This means there are two categories with the same name, this must be a subcategory that has the same name as the main category
+			foreach($termbyname as $key=>$value) {
+				//Check if one of the categories has a parent, this must be the subcategory
+				$parent = taxonomy_get_parents($key);
+				//We want the subcategory only, so continue only if the current category has a parent
+				if(!empty($parent)) {
+					foreach($parent as $pkey=>$pvalue) {
+						//If the parent name is equal to the passed argument, we know we are on the right trail
+						if($pvalue->name == $maincategory) {
+							//Store the chosen tid as correcttid
+							$correcttid = $key;
+							//Store the tid of the parent element as arg1tid
+							$correcttid_main = $pvalue->tid;
+						}
+					}
+				}
+			}
+		}
+		else {
+			//This means there's only one category with this name. We store the tid as correcttid.
+			$tmp = array_keys($termbyname);
+			$correcttid = $termbyname[$tmp[0]]->tid;
+		}
+	}
+	//$correcttid now contains the tid that is to be passed to the search
+	//$level contains either 'main' or 'sub' depending on which level we are displaying products
+
+	$results = json_decode(regiomino_productranking_do_search('*', 10, 1, 'title,image,pickupdelay,duration,origin_locality,origin_country,sellerprofile_nid,sellerprofile_title,labels,_author,origin_lat,origin_lon,nodeobject', '_kategorie', 100, '_kategorie:' . $correcttid));
+
+	$documents = $results->documents;
+	$metadata = $results->metaData;
+	
+	//Get sellers of offers
+	$sellers = array();
+	$labelentities = array();
+	foreach($documents as $key=>$offervalues) {
+	
+		//Sellers
+		$sellers[$offervalues->fields->_author[0]]['name'] = $offervalues->fields->sellerprofile_title[0];
+		if(isset($sellers[$offervalues->uid]['amount'])) {
+			$sellers[$offervalues->fields->_author[0]]['amount'] += 1;
+		}
+		else {
+			$sellers[$offervalues->fields->_author[0]]['amount'] = 1;
+		}
+		
+		//Labels
+		$labelentities = json_decode($offervalues->fields->labels[0]);
+	}
+	
+	$offers = regiomino_productranking_boost_entities_search($documents);
+
+	foreach($offers as $key=>$value) {
+		$avlbpickupdates = regiomino_shipping_get_available_pickupdates($value->id, 'bringlivery', FALSE);
+		$avlbcpickupdates = regiomino_shipping_get_available_pickupdates($value->id, 'centralpickup', FALSE);
+		$delay = $value->fields->pickupdelay[0] * 3600;
+		$duration = strtotime($value->fields->duration[0]) + 86400;
+		$shipping = regiomino_shipping_get_latestorder($avlbpickupdates, $delay, $duration);
+		$centralpickup = regiomino_shipping_get_latestorder($avlbcpickupdates, $delay, $duration, 'centralpickup');
+		
+		if(empty($shipping['begin']) || empty($centralpickup[0]['begin'])) {
+			unset($offers[$key]);
+		}
+		else {
+			$offers[$key]->fields->avlbpickupdates = $avlbpickupdates;
+			$offers[$key]->fields->avlbcpickupdates = $avlbcpickupdates;
+			$offers[$key]->fields->delay = $delay;
+			$offers[$key]->fields->duration = $duration;
+			$offers[$key]->fields->shipping = $shipping;
+			$offers[$key]->fields->centralpickup = $centralpickup;
+			$availableforselection = FALSE;
+			switch($_SESSION['geolocation_data']['type']) {
+				case 'bringlivery':
+					$deliveryoptions = array_keys($offers[$key]->fields->avlbpickupdates);
+				break;
+				case 'centralpickup':
+					$deliveryoptions = array_keys($offers[$key]->fields->avlbcpickupdates);
+				break;
+			}
+			if(in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptions)) $availableforselection = TRUE;
+			$offers[$key]->fields->availableforselection = $availableforselection;
+			$nodeobject = node_load($value->id);
+			$offers[$key]->fields->discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
+			$offers[$key]->fields->originalprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
+			$offers[$key]->fields->baseprice = regiomino_offer_get_baseprice($nodeobject);
+		}
+	}
+	
+	
+	$subcategory_terms = taxonomy_term_load_multiple($metadata->fields->{'term-facet._kategorie.terms'});
+	$subcategory_counts = $metadata->fields->{'term-facet._kategorie.counts'};
+	$sortedsubcatitems = array();
+	$counter = 0;
+	foreach($subcategory_terms as $key=>$value) {
+		$sortedsubcatitems[$key]['name'] = $value->name;
+		$sortedsubcatitems[$key]['amount'] = $subcategory_counts[$counter];
+		$sortedsubcatitems[$key]['active'] = FALSE;
+		if($level == 'sub' && $correcttid == $key) $sortedsubcatitems[$key]['active'] = TRUE;
+		$counter++;
+	}
+	
+	//pass variables to template and return the result
+	return	theme('regiomino_productranking_theme_categorysearch', array(
+						'vars' => array(
+							'subcatitems' => $sortedsubcatitems,
+							'qualitylabels' => $labelentities,
+							'offers' => $offers,
+							'sellers' => $sellers,
+						),
+					));
+}
+
+function regiomino_productranking_do_search($searchterm = '*', $listsize = 20, $page = 1, $returnfields = 'title,body,image', $returntermfacetsfields = '', $returntermfacetscount = 100, $filter = '') {
+	$full_index_url = variable_get('search_search_url', 'http://188.40.37.206');
+	$full_index_url .= ':';
+	$full_index_url .= variable_get('search_search_port', '9690');
+	$full_index_url .= variable_get('search_search_path', '/json/search.ov49fxokylmbbrbxmcozlmapga3pct');
+	$data = array(
+		'method' => 'search',
+		'param0' => $searchterm,
+	);
+	$param1 =	array('hits.list.size',$listsize,'hits.list.offset',($page-1)*$listsize,'return.fields',$returnfields);
+	if(!empty($returntermfacetsfields)) {
+		array_push($param1, 'return.term-facets.fields', $returntermfacetsfields);
+		array_push($param1, 'return.term-facets.count', $returntermfacetscount);
+	}
+	if(!empty($filter)) {
+		array_push($param1, 'filter.query', $filter);
+	}
+	$data['param1'] = json_encode($param1);
+	$full_url = url($full_index_url, array('query' => $data));
+	$result = drupal_http_request($full_url);
+	
+	return $result->data;
+}
+
+function regiomino_productranking_display_category() {
+	$queryparams = drupal_get_query_parameters();
+	$arg1 = arg(1);
+	if(!isset($arg1)) $arg1 = 'Gemüse';
+	$arg2 = arg(2);
+	if(!isset($arg2)) {
+		//This means we are on the main level of the category
+		$term = $arg1;
+		$termbyname = taxonomy_get_term_by_name($arg1);
+		if(count($termbyname) > 1) {
+			//This means there are two categories with the same name, this must be a subcategory that has the same name as the main category
+			foreach($termbyname as $key=>$value) {
+				//Check if one of the categories has a parent, this must be the subcategory
+				$parent = taxonomy_get_parents($key);
+				//We want the main category only, so store the tid of the one that does not have a parent as correcttid
+				if(empty($parent)) $correcttid = $key;
+			}
+		}
+		else {
+			//This means there's only one category with this name. We store the tid as correcttid.
+			$correcttid = $termbyname[key($termbyname)]->tid;
+		}
+		//Later we'll also need the tid of the main level category, since this is the same here, just copy correcttid to arg1tid
+		$arg1tid = $correcttid;
+	}
+	else {
+		//This means we are on the subcategory level of a main category
+		$term = $arg2;
+		$termbyname = taxonomy_get_term_by_name($arg2);
+		if(count($termbyname) > 1) {
+			//This means there are two categories with the same name, this must be a subcategory that has the same name as the main category
+			foreach($termbyname as $key=>$value) {
+				//Check if one of the categories has a parent, this must be the subcategory
+				$parent = taxonomy_get_parents($key);
+				//We want the subcategory only, so continue only if the current category has a parent
+				if(!empty($parent)) {
+					foreach($parent as $pkey=>$pvalue) {
+						//If the parent name is equal to the passed argument, we know we are on the right trail
+						if($pvalue->name == $arg1) {
+							//Store the chosen tid as correcttid
+							$correcttid = $key;
+							//Store the tid of the parent element as arg1tid
+							$arg1tid = $pvalue->tid;
+						}
+					}
+				}
+			}
+		}
+		else {
+			//This means there's only one category with this name. We store the tid as correcttid.
+			$correcttid = $termbyname[key($termbyname)]->tid;
+			//Get the parent of the chosen tid
+			$parent = taxonomy_get_parents($correcttid);
+			//Store the parent tid as arg1tid
+			$arg1tid = $parent[key($parent)]->tid;
+		}
+	}
+	//Now we always have the tid to be loaded in $correcttid and the tid of the main level in $arg1tid and the name of the chosen category in $term
+	
+	//Set $term as page title
+	drupal_set_title($arg1);
+	
+	//Get all subcategories with amount of items in it and active state (discard empty subcategories)
+	//Use Drupal cache, so this only has to be renewed once every 3 hours
+	$time = time();
+	$cacheexpire = $time - variable_get('regiomino_menu_cache_expire', 1);
+	$vid = 2;
+	
+	//Get children of parent item (cache this)
+	$cached = cache_get('regiominomenu_children' . $arg1tid);
+	if($cached && $cached->created > $cacheexpire) {
+		$children = $cached->data;
+	}
+	else {
+		cache_clear_all('regiominomenu_children' . $arg1tid, 'cache', TRUE);
+		$children = taxonomy_get_children($arg1tid, $vid);
+		cache_set('regiominomenu_children' . $arg1tid, $children);
+	}	
+
+	$currentpath = current_path();
+	$rowsaddup = 0;
+	foreach($children as $childid=>$childobject) {
+
+ 		//Check if subcategory contains products (cache this)
+		$cached = cache_get('regiominomenu_childitems_products' . $childid);
+		if($cached && $cached->created > $cacheexpire) {
+			$selectednodes = $cached->data;
+			//var_dump($selectednodes);
+		}
+		else {
+			cache_clear_all('regiominomenu_childitems_products' . $childid, 'cache', TRUE);
+			$query = new EntityFieldQuery;
+			$tmp = $query
+				->entityCondition('entity_type', 'node')
+				->entityCondition('bundle', 'offer')
+				->propertyCondition('soldout', 0)
+				->propertyCondition('status', 1)
+				->fieldCondition('field_category', 'tid', $childid)
+				->execute();
+			$selectednodes = $tmp;
+ 			cache_set('regiominomenu_childitems_products' . $childid, $selectednodes);
+		}
+
+		//only add link to list if subcategory contains products
+		if(isset($selectednodes['node']) && !empty($selectednodes['node'])) {
+			$offers = entity_load('node', array_keys($selectednodes['node']));
+			$offer_keys = array_keys($offers);
+			$numrows = 0;
+			foreach($offers as $offerkey=>$offervalue) {
+				$avlbpickupdates = regiomino_shipping_get_available_pickupdates($offervalue->nid, 'bringlivery', FALSE);
+				$avlbcpickupdates = regiomino_shipping_get_available_pickupdates($offervalue->nid, 'centralpickup', FALSE);
+				$delay = $offervalue->field_pickupdelay[LANGUAGE_NONE][0]['value'] * 3600;
+				$duration = strtotime($offervalue->field_duration[LANGUAGE_NONE][0]['value']) + 86400;
+				$shipping = regiomino_shipping_get_latestorder($avlbpickupdates, $delay, $duration);
+				$centralpickup = regiomino_shipping_get_latestorder($avlbcpickupdates, $delay, $duration, 'centralpickup');
+				if(!empty($shipping['begin']) && !empty($centralpickup[0]['begin'])) {
+					$numrows++;
+				}
+			}
+			
+			if($numrows) {
+				$subcatitems[$childid]['name'] = $childobject->name;
+				$subcatitems[$childid]['link'] = url('angebote/' . $arg1 . '/' . $childobject->name);
+				$subcatitems[$childid]['removelink'] = url('angebote/' . $arg1);
+				$subcatitems[$childid]['amount'] = $numrows;
+				$subcatitems[$childid]['active'] = FALSE;
+				if($currentpath == 'angebote/' . $arg1 . '/' . $childobject->name) $subcatitems[$childid]['active'] = TRUE;
+			}
+		}
+	}
+
+	arsort($subcatitems);
+/* 	$subcatitems[$arg1tid]['name'] = t('Display all');
+	$subcatitems[$arg1tid]['uri'] = 'angebote/' . $arg1;
+	$subcatitems[$arg1tid]['amount'] = $rowsaddup;
+	if($currentpath == 'angebote/' . $arg1) $subcatitems[$arg1tid]['active'] = TRUE; */
+	$sortedsubcatitems = array_reverse($subcatitems, TRUE);
+
+	$query = new EntityFieldQueryExtraFields();
+	$query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'offer')
+		->propertyCondition('soldout', 0)
+		->propertyCondition('status', 1)
+		->fieldCondition('field_category', 'tid', $correcttid);
+		if(!empty($queryparams['label'])) $query->fieldCondition('field_labels', 'target_id', $queryparams['label']);
+		if(!empty($queryparams['seller'])) $query->propertyCondition('uid', $queryparams['seller']);
+	$productsincategory = $query->pager(48)->execute();
+	$offers = entity_load('node', array_keys($productsincategory['node']));
+	
+	$offers = regiomino_productranking_boost_entities($offers);
+
+	foreach($offers as $key=>$value) {
+		$avlbpickupdates = regiomino_shipping_get_available_pickupdates($value->nid, 'bringlivery', FALSE);
+		$avlbcpickupdates = regiomino_shipping_get_available_pickupdates($value->nid, 'centralpickup', FALSE);
+		$delay = $value->field_pickupdelay[LANGUAGE_NONE][0]['value'] * 3600;
+		$duration = strtotime($value->field_duration[LANGUAGE_NONE][0]['value']) + 86400;
+		$shipping = regiomino_shipping_get_latestorder($avlbpickupdates, $delay, $duration);
+		$centralpickup = regiomino_shipping_get_latestorder($avlbcpickupdates, $delay, $duration, 'centralpickup');
+		
+		if(empty($shipping['begin']) || empty($centralpickup[0]['begin'])) {
+			unset($offers[$key]);
+		}
+		else {
+			$offers[$key]->avlbpickupdates = $avlbpickupdates;
+			$offers[$key]->avlbcpickupdates = $avlbcpickupdates;
+			$offers[$key]->delay = $delay;
+			$offers[$key]->duration = $duration;
+			$offers[$key]->shipping = $shipping;
+			$offers[$key]->centralpickup = $centralpickup;
+			$availableforselection = FALSE;
+			switch($_SESSION['geolocation_data']['type']) {
+				case 'bringlivery':
+					$deliveryoptions = array_keys($offers[$key]->avlbpickupdates);
+				break;
+				case 'centralpickup':
+					$deliveryoptions = array_keys($offers[$key]->avlbcpickupdates);
+				break;
+			}
+			if(in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptions)) $availableforselection = TRUE;
+			$offers[$key]->availableforselection = $availableforselection;
+			$nodeobject = node_load($offers[$key]->nid);
+			$offers[$key]->discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
+			$offers[$key]->originalprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
+			$offers[$key]->baseprice = regiomino_offer_get_baseprice($nodeobject);
+			$seller_user = user_load($offers[$key]->uid);
+			$offers[$key]->seller_profile = node_load($seller_user->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+		}
+	}
+
+	$labelarray = array();
+	if(isset($offers) && !empty($offers)) {
+		foreach($offers as $key=>$value) {
+			if(isset($value->field_labels[LANGUAGE_NONE]) && !empty($value->field_labels[LANGUAGE_NONE])) {
+				foreach($value->field_labels[LANGUAGE_NONE] as $labelkey=>$labelvalue) {
+					$labelarray[$labelvalue['target_id']] = NULL;
+				}
+			}
+		}
+	}
+	$loadarray = array();
+	if(!empty($labelarray)) {
+		foreach($labelarray as $key => $value) {
+			$loadarray[] = $key;
+		}
+	}
+	$labelentities = entity_load('node', $loadarray);
+	foreach($labelentities as $labelid => $labelvalues) {
+		if(empty($arg2)) {
+			$labelentities[$labelid]->link = url('angebote/' . $arg1, array('query' => array('label' => $labelid, 'seller' => $queryparams['seller'])));
+			$labelentities[$labelid]->removelink = url('angebote/' . $arg1, array('query' => array('seller' => $queryparams['seller'])));
+		}
+		else {
+			$labelentities[$labelid]->link = url('angebote/' . $arg1 . '/' . $arg2, array('query' => array('label' => $labelid, 'seller' => $queryparams['seller'])));
+			$labelentities[$labelid]->removelink = url('angebote/' . $arg1 . '/' . $arg2, array('query' => array('seller' => $queryparams['seller'])));
+		}
+		if($queryparams['label'] == $labelid) {
+			$labelentities[$labelid]->selected = TRUE;
+		}
+	}
+
+
+	//Get sellers of offers
+	$sellers = array();
+	foreach($offers as $key=>$offervalues) {
+		$seller_user = user_load($offervalues->uid);
+		$seller_object = node_load($seller_user->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+		$sellers[$offervalues->uid]['name'] = $seller_object->title;
+		
+		if($queryparams['seller'] == $offervalues->uid) {
+			$sellers[$offervalues->uid]['active'] = TRUE;
+		}
+		if(isset($sellers[$offervalues->uid]['amount'])) {
+			$sellers[$offervalues->uid]['amount'] += 1;
+		}
+		else {
+			$sellers[$offervalues->uid]['amount'] = 1;
+		}
+		if(empty($arg2)) {
+			$sellers[$offervalues->uid]['link'] = url('angebote/' . $arg1, array('query' => array('label' => $queryparams['label'], 'seller' => $offervalues->uid)));
+			$sellers[$offervalues->uid]['removelink'] = url('angebote/' . $arg1, array('query' => array('label' => $queryparams['label'])));
+		}
+		else {
+			$sellers[$offervalues->uid]['link'] = url('angebote/' . $arg1 . '/' . $arg2, array('query' => array('label' => $queryparams['label'], 'seller' => $offervalues->uid)));
+			$sellers[$offervalues->uid]['removelink'] = url('angebote/' . $arg1 . '/' . $arg2, array('query' => array('label' => $queryparams['label'])));
+		}
+	}
+	
+	
+	//pass variables to template and return the result
+	return	theme('regiomino_productranking_theme_category', array(
+						'vars' => array(
+							'arg1' => $arg1,
+							'subcatitems' => $sortedsubcatitems,
+							'qualitylabels' => $labelentities,
+							'offers' => $offers,
+							'sellers' => $sellers,
+							'pager' => theme('pager'),
+						),
+					));
+
+	
+	/*
+	$querystring= "
+		SELECT
+			td.tid AS termid,
+			pn.nid AS nid_product,
+			fpr.field_profilereference_target_id AS seller_product,
+			6371 * 2 * ASIN(SQRT(POWER(SIN((" . $user_lat . " - sl.field_location_lat)*pi()/180 / 2), 2) +  COS(" . $user_lat . " * pi()/180) * COS(sl.field_location_lat * pi()/180) * POWER(SIN((" . $user_lon . " - sl.field_location_lon) * pi()/180 / 2), 2)  ) ) AS distance_to_seller,
+			6371 * 2 * ASIN(SQRT(POWER(SIN((" . $user_lat . " - pl.field_origin_geoloc_lat)*pi()/180 / 2), 2) +  COS(" . $user_lat . " * pi()/180) * COS(pl.field_origin_geoloc_lat * pi()/180) * POWER(SIN((" . $user_lon . " - pl.field_origin_geoloc_lon) * pi()/180 / 2), 2)  ) ) AS distance_to_productorigin
+		FROM
+			{field_data_field_location} sl,
+			{field_data_field_origin_geoloc} pl,
+			{node} sn,
+			{node} pn,
+			{taxonomy_term_data} td,
+			{taxonomy_index} ti,
+			{field_data_field_profilereference} fpr,
+			{field_data_field_labels} lb
+		WHERE
+			sl.bundle = 'seller_profile'
+			AND
+			sl.entity_id = sn.nid
+			AND
+			sn.uid = pn.uid
+			AND
+			pn.soldout = 0
+			AND
+			pn.status = 1
+			AND
+			pn.type = 'offer'
+			AND
+			pn.nid = pl.entity_id
+			AND
+			td.vid = 2
+			AND
+			td.tid = " . $correcttid . "
+			AND
+			td.tid = ti.tid
+			AND
+			pn.nid = ti.nid
+			AND
+			pn.uid = fpr.entity_id
+			" . $where . "
+		GROUP BY nid_product
+		ORDER BY distance_to_productorigin ASC;
+		";
+*/
+	
+}
+
+//Returns distance between two points in meters by using the vincentyGreatCircleDistance formula
+function regiomino_productranking_get_distance($latitudeFrom, $longitudeFrom, $latitudeTo, $longitudeTo, $earthRadius = 6371000) {
+  // convert from degrees to radians
+  $latFrom = deg2rad($latitudeFrom);
+  $lonFrom = deg2rad($longitudeFrom);
+  $latTo = deg2rad($latitudeTo);
+  $lonTo = deg2rad($longitudeTo);
+
+  $lonDelta = $lonTo - $lonFrom;
+  $a = pow(cos($latTo) * sin($lonDelta), 2) +
+    pow(cos($latFrom) * sin($latTo) - sin($latFrom) * cos($latTo) * cos($lonDelta), 2);
+  $b = sin($latFrom) * sin($latTo) + cos($latFrom) * cos($latTo) * cos($lonDelta);
+
+  $angle = atan2(sqrt($a), $b);
+  return $angle * $earthRadius;
+}
+
+//Pass result of entity_load to this function to have all entities receive a regionalboost
+function regiomino_productranking_boost_entities_search($entityload, $ulat = NULL, $ulon = NULL) {
+	if(is_null($ulat) || is_null($ulon)) {
+		//Get user's current location, if no other coordinates are passed to this function
+		$ulat = $_SESSION['geolocation_data']['latitude'];
+		$ulon = $_SESSION['geolocation_data']['longitude'];
+	}
+
+	//1. Iterate through the provided entities and add fields for distances
+	foreach($entityload as $entityid => $entityobject) {
+	
+		//Add distance from user to product origin
+		$elat = $entityobject->fields->origin_lat[0];
+		$elon = $entityobject->fields->origin_lon[0];
+		$distance = regiomino_productranking_get_distance($ulat, $ulon, $elat, $elon);
+		$entityload[$entityid]->fields->distance_user_to_origin = $distance;
+		$entityload[$entityid]->fields->regional_boost = 1;
+	}
+	
+	usort($entityload, 'regiomino_productranking_sortentities_distance_user_origin_search');
+	
+	return $entityload;
+}
+
+//Pass result of entity_load to this function to have all entities receive a regionalboost
+function regiomino_productranking_boost_entities($entityload, $ulat = NULL, $ulon = NULL) {
+	if(is_null($ulat) || is_null($ulon)) {
+		//Get user's current location, if no other coordinates are passed to this function
+		$ulat = $_SESSION['geolocation_data']['latitude'];
+		$ulon = $_SESSION['geolocation_data']['longitude'];
+	}
+
+	//1. Iterate through the provided entities and add fields for distances
+	foreach($entityload as $entityid => $entityobject) {
+		//Add distance from user to product origin
+		$elat = $entityobject->field_origin_geoloc[LANGUAGE_NONE][0]['lat'];
+		$elon = $entityobject->field_origin_geoloc[LANGUAGE_NONE][0]['lon'];
+		$distance = regiomino_productranking_get_distance($ulat, $ulon, $elat, $elon);
+		$entityload[$entityid]->distance_user_to_origin = $distance;
+		
+		//Add distance from user to seller
+		$seller_user = user_load($entityobject->uid);
+		$seller_profile = node_load($seller_user->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+		$slat = $seller_profile->field_location[LANGUAGE_NONE][0]['lat'];
+		$slon = $seller_profile->field_location[LANGUAGE_NONE][0]['lon'];
+		$distance = regiomino_productranking_get_distance($ulat, $ulon, $slat, $slon);
+		$entityload[$entityid]->distance_user_to_seller = $distance;
+	}
+	
+	//2. Iterate through the provided entities and add boosts if entities match certain criteria
+	foreach($entityload as $entityid => $entityobject) {
+		$d = $entityobject->distance_user_to_seller;
+		switch(TRUE) {
+/* 			case ($d<=5000):
+				$entityload[$entityid]->regional_boost = 5;
+			break;
+			case ($d<=20000):
+				$entityload[$entityid]->regional_boost = 4;
+			break;
+			case ($d<=50000):
+				$entityload[$entityid]->regional_boost = 3;
+			break;
+			case ($d<=100000):
+				$entityload[$entityid]->regional_boost = 2;
+			break; */
+			default:
+				$entityload[$entityid]->regional_boost = 1;
+			break;
+		}
+	}
+	
+	usort($entityload, 'regiomino_productranking_sortentities_distance_user_origin');
+	
+	return $entityload;
+}
+
+function regiomino_productranking_sortentities_distance_user_origin($a, $b) {
+/* 	if ($a->regional_boost == $b->regional_boost) {
+			return 0;
+	} */
+	return ($a->distance_user_to_origin > $b->distance_user_to_origin) ? +1 : -1;
+}
+
+function regiomino_productranking_sortentities_distance_user_origin_search($a, $b) {
+/* 	if ($a->regional_boost == $b->regional_boost) {
+			return 0;
+	} */
+	return ($a->fields->distance_user_to_origin > $b->fields->distance_user_to_origin) ? -1 : +1;
+}

@@ -1,0 +1,6 @@
+name = Regiomino Invoice
+description = Takes care of invoice generation
+core = 7.x
+package = Regiomino
+
+dependencies[] = tcpdf

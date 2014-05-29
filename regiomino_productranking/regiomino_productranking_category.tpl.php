@@ -1,0 +1,1 @@
+theme this in themefolder/templates/regiomino_productranking_theme_category.tpl.php

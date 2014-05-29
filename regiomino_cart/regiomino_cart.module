@@ -1,0 +1,1417 @@
+<?php
+
+//Make sure session id persists by writing something to the session
+$_SESSION['persist'] = TRUE;
+
+/**
+* Implements hook_entity_info().
+*/
+function regiomino_cart_entity_info() {
+  $return = array(
+    'regiomino_cart' => array(
+      'label' => t('Regiomino Cart Item'),
+      'entity class' => 'Entity',
+      'controller class' => 'EntityAPIController',
+      'base table' => 'regiomino_cart',
+      'fieldable' => FALSE,
+      'entity keys' => array(
+        'id' => 'cart_item_id',
+      ),
+      'bundles' => array(),
+      'load hook' => 'regiomino_cart_load',
+      'view modes' => array(
+        'full' => array(
+          'label' => t('Default'),
+          'custom settings' => FALSE,
+        ),
+      ),
+      'label callback' => 'entity_class_label',
+      'uri callback' => 'entity_class_uri',
+      'module' => 'regiomino_cart',
+      'access callback' => 'regiomino_cart_access',
+    ),
+  );
+  return $return;
+}
+
+/**
+* Implements hook_entity_property_info_alter().
+*/
+function regiomino_cart_entity_property_info_alter(&$info) {
+  $properties = &$info['regiomino_cart']['properties'];
+  $properties['changed'] = array(
+    'label' => t("Date changed"),
+    'type' => 'date',
+    'schema field' => 'changed',
+    'description' => t("The date the item was most recently updated."),
+  );
+	
+  $properties['cart_id'] = array(
+    'label' => t("User"),
+    'type' => 'user',
+    'description' => t("The owner of the item."),
+    'required' => TRUE,
+    'schema field' => 'cart_id',
+  );
+
+	$properties['nid'] = array(
+    'label' => t("Angebot"),
+    'type' => 'node',
+    'description' => t("Offer"),
+    'required' => TRUE,
+    'schema field' => 'nid',
+  );
+}
+
+/**
+* Implementation of hook_menu().
+*/
+function regiomino_cart_menu() {
+	$items = array();
+
+  $items['cart'] = array(
+    'title' => t('Shopping cart'),
+    'page callback' => 'drupal_get_form', // function called when path is requested
+		'page arguments' => array('regiomino_cart_form'),
+    'access arguments' => array('access content'),
+    'file' => 'regiomino_cart_form.inc',
+  );
+	
+	$items['cart/remove/%'] = array(
+    'page callback' => 'regiomino_cart_remove_product',
+    'page arguments' => array(2),
+    'access arguments' => array('access content'),
+	);
+	
+	$items['admin/config/regiomino'] = array(
+    'title' => 'Regiomino',
+    'description' => 'Settings for Regiomino modules.',
+    'position' => 'left',
+    'weight' => -10,
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('administer site configuration'),
+    'file' => 'system.admin.inc',
+    'file path' => drupal_get_path('module', 'system'),
+  );
+	
+	$items['admin/config/regiomino/cart'] = array(
+    'title' => 'Regiomino cart settings',
+    'description' => 'Make settings for regiomino cart.',
+    'page callback' => 'drupal_get_form', // function called when path is requested
+    'page arguments' => array('regiomino_cart_admin_settings'), // form id passed to the function
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'regiomino_cart.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_cart'),
+  );
+	
+	$items['checkout/address'] = array(
+    'title' => t('Checkout'),
+    'page callback' => 'regiomino_cart_addressinfo',
+    'access arguments' => array('access content'),
+		'file' => 'regiomino_cart_checkout_address.inc',
+  );
+	
+	$items['checkout/shipping'] = array(
+    'title' => t('Checkout'),
+    'page callback' => 'regiomino_cart_shippinginfo',
+    'access arguments' => array('access content'),
+		'file' => 'regiomino_cart_checkout_shipping.inc',
+  );
+
+	$items['checkout/shippingaddress'] = array(
+    'title' => t('Checkout'),
+    'page callback' => 'regiomino_cart_shippingaddressinfo',
+    'access arguments' => array('access content'),
+		'file' => 'regiomino_cart_checkout_shippingaddress.inc',
+  );
+	
+	$items['checkout/payment'] = array(
+    'title' => t('Checkout'),
+    'page callback' => 'regiomino_cart_paymentinfo',
+    'access arguments' => array('access content'),
+		'file' => 'regiomino_cart_checkout_payment.inc',
+  );
+	
+	$items['addtocart'] = array(
+    'page callback' => 'regiomino_cart_add_to_cart',
+    'access arguments' => array('access content'),
+	);
+	
+	$items['getcartblocktext'] = array(
+    'page callback' => 'regiomino_cart_get_cart_block_text',
+    'access arguments' => array('access content'),
+	);
+	
+	return $items;
+}
+
+function regiomino_cart_empty_cart($cart_id = NULL) {
+
+	if(!isset($cart_id)) {
+		global $user;
+		if ($user->uid) {
+			$cart_id = $user->uid;
+		}
+		else {
+			$cart_id = session_id();
+		}
+	}
+	
+	$query = new EntityFieldQuery();
+	$cartqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('cart'))
+		->propertyCondition('status', 1)
+		->fieldCondition('field_session_id', 'value', $cart_id)
+		->execute();
+	
+
+	if(!isset($cartqry['node']) && $cart_id > 0) {
+		$query = new EntityFieldQuery();
+		$cartqry = $query
+			->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', array('cart'))
+			->propertyCondition('status', 1)
+			->fieldCondition('field_user_reference', 'target_id', $cart_id)
+			->execute();
+	}
+
+	if(isset($cartqry['node'])) {
+		$cartkey = array_keys($cartqry['node']);
+		$nodeobject = node_load($cartkey[0]);
+		if(isset($nodeobject->field_cart_items[LANGUAGE_NONE][0]['value'])) {
+			return FALSE;
+		}
+		else {
+			return TRUE;
+		}
+	}
+	else {
+		return TRUE;
+	}
+	
+	// $sql = db_query("
+		// SELECT
+			// cart_item_id
+		// FROM
+			// {regiomino_cart}
+		// WHERE
+			// cart_id = :cart_id
+	// ", array(
+		// ':cart_id' => $cart_id
+	// ));
+	
+	// $sqlresults = $sql->fetchObject();
+	
+	// if(is_object($sqlresults)) {
+		// return FALSE;
+	// }
+	// else {
+		// return TRUE;
+	// }
+}
+
+function regiomino_cart_delete_cart($cart_id = NULL) {
+	if(!isset($cart_id)) {
+		global $user;
+		if ($user->uid) {
+			$cart_id = $user->uid;
+		}
+		else {
+			$cart_id = session_id();
+		}
+	}
+	// $sql = db_query("
+		// DELETE FROM
+			// {regiomino_cart}
+		// WHERE
+			// cart_id = :cart_id
+	// ", array(
+		// ':cart_id' => $cart_id
+	// ));
+	
+	$query = new EntityFieldQuery();
+	$cartqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('cart'))
+		->propertyCondition('status', 1)
+		->fieldCondition('field_session_id', 'value', $cart_id)
+		->execute();
+
+	if(!isset($cartqry['node']) && $cart_id > 0) {
+		$query = new EntityFieldQuery();
+		$cartqry = $query
+			->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', array('cart'))
+			->propertyCondition('status', 1)
+			->fieldCondition('field_user_reference', 'target_id', $cart_id)
+			->execute();
+	}
+	
+	if(isset($cartqry['node'])) {
+		$cartkey = array_keys($cartqry['node']);
+		$nodeobject = node_load($cartkey[0]);
+		$nodeobject->status = 0;
+		node_save($nodeobject);
+	}
+}
+
+function regiomino_cart_get_amount($nid, $cart_id = NULL) {
+	//Get user id to use as cart id {regiomino_cart}
+	global $user;
+	if ($user->uid) {
+		$cart_id = $user->uid;
+	}
+	else {
+		$cart_id = session_id();
+	}
+	
+	$query = new EntityFieldQuery();
+	$cartqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('cart'))
+		->propertyCondition('status', 1)
+		->fieldCondition('field_session_id', 'value', $cart_id)
+		->execute();
+
+	if(!isset($cartqry['node']) && $cart_id > 0) {
+		$query = new EntityFieldQuery();
+		$cartqry = $query
+			->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', array('cart'))
+			->propertyCondition('status', 1)
+			->fieldCondition('field_user_reference', 'target_id', $cart_id)
+			->execute();
+	}
+	$amount = 0;
+	if(isset($cartqry['node'])) {
+		$cartkey = array_keys($cartqry['node']);
+		$nodeobject = node_load($cartkey[0]);
+		$field_collection_item_values = array();
+		if(isset($nodeobject->field_cart_items[LANGUAGE_NONE])) {
+			foreach($nodeobject->field_cart_items[LANGUAGE_NONE] as $key=>$value) {
+				$field_collection_item_values[] = $value['value'];
+			}
+			$field_collection_items = entity_load('field_collection_item', $field_collection_item_values);
+			if(isset($field_collection_items)) {
+				foreach($field_collection_items as $fcikey => $fcivalues) {
+					if($fcivalues->field_offer[LANGUAGE_NONE][0]['target_id'] == $nid) {
+						$amount = $fcivalues->field_amount[LANGUAGE_NONE][0]['value'];
+					}
+				}
+			}
+		}
+	}
+	return $amount;
+}
+
+function regiomino_cart_change_session_to_uid($session, $uid) {
+	$query = new EntityFieldQuery();
+	$cartqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('cart'))
+		->propertyCondition('status', 1)
+		->fieldCondition('field_session_id', 'value', $session)
+		->execute();
+	if(isset($cartqry['node'])) {
+		regiomino_cart_delete_cart($uid);
+		$cartkey = array_keys($cartqry['node']);
+		$cartobject = node_load($cartkey[0]);
+		$cartobject->uid = $uid;
+		$cartobject->status = 1;
+		$cartobject->field_user_reference[LANGUAGE_NONE][0]['target_id'] = $uid;
+		node_save($cartobject);
+	}
+}
+
+function regiomino_cart_remove_product($cart_item_id, $msg = 'The product was removed from your cart', $msgtype = 'status', $destination = 'cart', $goto = TRUE) {
+	// $query = db_delete('{regiomino_cart}')
+		// ->condition('cart_item_id', $cart_item_id)
+		// ->execute();
+
+	// global $user;
+	// if ($user->uid) {
+		// $cart_id = $user->uid;
+	// }
+	// else {
+		// $cart_id = session_id();
+	// }
+	
+	$query = new EntityFieldQuery();
+	$cartqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('cart'))
+		->propertyCondition('status', 1)
+		->fieldCondition('field_cart_items', 'value', $cart_item_id)
+		->execute();
+	$cartkey = array_keys($cartqry['node']);
+	$cartobject = node_load($cartkey[0]);
+	foreach($cartobject->field_cart_items[LANGUAGE_NONE] as $key => $values) {
+		if($values['value'] == $cart_item_id) {
+			unset($cartobject->field_cart_items[LANGUAGE_NONE][$key]);
+		}
+	}
+	if(empty($cartobject->field_cart_items[LANGUAGE_NONE])) {
+		unset($cartobject->field_cart_items);
+	}
+	node_save($cartobject);
+	entity_delete_multiple('field_collection_item', array($cart_item_id));
+	
+	
+	drupal_set_message(t($msg), $msgtype);
+	if($goto)	drupal_goto($destination);
+}
+
+
+function regiomino_cart_load_cart($cart_id = NULL) {
+
+	$wares = &drupal_static(__FUNCTION__, array());
+
+	if(!isset($wares[$cart_id])) {
+
+		//If no cart_id was passed, use the one of the current user
+		if(!isset($cart_id)) {
+			global $user;
+			if ($user->uid) {
+				$cart_id = $user->uid;
+			}
+			else {
+				$cart_id = session_id();
+			}
+		}
+
+		// $query = new EntityFieldQuery;
+		// $cartitemids = $query
+		// ->entityCondition('entity_type', 'regiomino_cart')
+		// ->propertyCondition('cart_id', $cart_id)
+		// ->execute();
+		// if(isset($cartitemids['regiomino_cart'])) $cartitems = entity_load('regiomino_cart', array_keys($cartitemids['regiomino_cart']));
+		
+		
+		$query = new EntityFieldQuery();
+		$cartqry = $query
+			->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', array('cart'))
+			->propertyCondition('status', 1)
+			->fieldCondition('field_session_id', 'value', $cart_id)
+			->execute();
+
+		if(!isset($cartqry['node']) && $cart_id > 0) {
+			$query = new EntityFieldQuery();
+			$cartqry = $query
+				->entityCondition('entity_type', 'node')
+				->entityCondition('bundle', array('cart'))
+				->propertyCondition('status', 1)
+				->fieldCondition('field_user_reference', 'target_id', $cart_id)
+				->execute();
+		}
+		
+		if(isset($cartqry['node'])) {
+			$cartkey = array_keys($cartqry['node']);
+			$nodeobject = node_load($cartkey[0]);
+			$field_collection_item_values = array();
+			if(isset($nodeobject->field_cart_items[LANGUAGE_NONE]) && !empty($nodeobject->field_cart_items[LANGUAGE_NONE])) {
+				foreach($nodeobject->field_cart_items[LANGUAGE_NONE] as $fcivalues) {
+					$field_collection_item_values[] = $fcivalues['value'];
+				}
+			}
+			if(!empty($field_collection_item_values)) {
+				$field_collection_items = entity_load('field_collection_item', $field_collection_item_values);
+			}
+			if(!empty($field_collection_items)) {
+				$cartitems = array();
+				foreach($field_collection_items as $fcikey => $fcivalue) {
+					$cartitems[$fcikey] = new stdClass();
+					$cartitems[$fcikey]->nid = $fcivalue->field_offer[LANGUAGE_NONE][0]['target_id'];
+					$cartitems[$fcikey]->qty = $fcivalue->field_amount[LANGUAGE_NONE][0]['value'];
+					$cartitems[$fcikey]->frequency = $fcivalue->field_frequency[LANGUAGE_NONE][0]['value'];
+					$cartitems[$fcikey]->comments = $fcivalue->field_comments[LANGUAGE_NONE][0]['value'];
+					$cartitems[$fcikey]->shipping_type = $fcivalue->field_deliverykey[LANGUAGE_NONE][0]['value'];
+					$cartitems[$fcikey]->shipping_option = $fcivalue->field_deliveryoption[LANGUAGE_NONE][0]['value'];
+				}
+			}
+		}
+
+		$warenkorb = array();
+		if(isset($cartitems)) {
+			foreach($cartitems as $cartitemid=>$cartitemobject) {
+			
+				$cartitemnode = node_load($cartitemobject->nid);
+				$cartitemselleruser = user_load($cartitemnode->uid);
+				$cartitemsellerprofile = node_load($cartitemselleruser->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+			
+				
+				//Berechnungen
+				$productimage = array(
+				'style_name' => 'thumbnail_cart',
+				'path' => $cartitemnode->field_image[LANGUAGE_NONE][0]['uri'],
+				'width' => '',
+				'height' => '',
+				'alt' => $cartitemnode->field_image[LANGUAGE_NONE][0]['alt'],
+				'title' => $cartitemnode->field_image[LANGUAGE_NONE][0]['title'],
+				'attributes' => array('class' => 'productimage'),
+				);
+
+				//Übertrag Verkäuferinfos in Array
+				$warenkorb[$cartitemselleruser->name]['profile']['profil_nid'] = $cartitemsellerprofile->nid;
+				$warenkorb[$cartitemselleruser->name]['profile']['profilobject'] = $cartitemsellerprofile;
+				$warenkorb[$cartitemselleruser->name]['profile']['ort'] = $cartitemsellerprofile->field_address[LANGUAGE_NONE][0]['locality'];
+				$warenkorb[$cartitemselleruser->name]['profile']['users_profile_title'] = $cartitemsellerprofile->title;
+				
+				//Übertrag Produktinfos in Array
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['image'] = theme('image_style',$productimage);
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['title'] = $cartitemnode->title;
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['dauer'] = $cartitemnode->field_duration[LANGUAGE_NONE][0]['value'];
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['mwst'] = rtrim(rtrim(number_format($cartitemnode->field_salestax[LANGUAGE_NONE][0]['value'], 2, ",", "."), '0'), ',') . "%";
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['mwst_wert'] = $cartitemnode->field_salestax[LANGUAGE_NONE][0]['value'];
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['preis'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, TRUE, TRUE, 'private', 1, 'field_tu_gross');
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['preis_wert'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, 'private', 1, 'field_tu_gross');
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['einzelpreis_wert'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, 'field_tu_gross') / $cartitemobject->qty;
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['gesamt'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, 'field_tu_gross');
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['gesamt_mwst'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, 'field_tu_vat');
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['includedvat'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, 'private', 1, 'field_tu_vat');
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['einheit_amount'] = $cartitemnode->field_packingunit[LANGUAGE_NONE][0]['first'];
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['einheit_unit'] = $cartitemnode->field_packingunit[LANGUAGE_NONE][0]['second'];
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['einheit'] = rtrim(rtrim(number_format($cartitemnode->field_packingunit[LANGUAGE_NONE][0]['first'], 2, ",", "."), '0'), ',') . ' ' . t(strip_tags($cartitemnode->field_packingunit[LANGUAGE_NONE][0]['second']));
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['shipping_weight'] = $cartitemnode->field_shippingweight[LANGUAGE_NONE][0]['value'];
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['pickupdelay'] = $cartitemnode->field_pickupdelay[LANGUAGE_NONE][0]['value'];
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['menge'] = $cartitemobject->qty;
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['nid'] = $cartitemnode->nid;
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['nodeobject'] = $cartitemnode;
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['vid'] = $cartitemnode->vid;
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['shipping_type'] = $cartitemobject->shipping_type;
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['shipping_option'] = $cartitemobject->shipping_option;
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['frequency'] = $cartitemobject->frequency;
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['comments'] = $cartitemobject->comments;
+			}
+		}
+		$wares[$cart_id] = $warenkorb;
+	}
+	return $wares[$cart_id];
+}
+
+function regiomino_cart_theme() {
+	return array(
+		'regiomino_cart_theme_cart_block' => array(
+			'template' => 'regiomino_cart_cart_block',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_cart_form' => array(
+			'template' => 'regiomino_cart_theme_form',
+			'render element' => 'form',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_cart_theme_shipping' => array(
+			'template' => 'regiomino_cart_shipping',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_cart_theme_shippingaddress' => array(
+			'template' => 'regiomino_cart_shippingaddress',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_cart_theme_payment' => array(
+			'template' => 'regiomino_cart_payment',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+	);
+}
+
+/**
+* Implementation of hook_block_info().
+*/
+function regiomino_cart_block_info() {
+  $blocks['regiomino_add_to_cart'] = array(
+    'info' => t('Add to cart'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+	$blocks['regiomino_cart_block'] = array(
+    'info' => t('Cart'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+	$blocks['regiomino_checkout_block'] = array(
+    'info' => t('Checkout info'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+	$blocks['regiomino_checkout_invoice'] = array(
+    'info' => t('Checkout invoice'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+	$blocks['regiomino_checkout_steps'] = array(
+    'info' => t('Checkout steps'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+	$blocks['regiomino_checkout_coupon'] = array(
+    'info' => t('Checkout coupon'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+  return $blocks;
+}
+
+/**
+* Implementation of hook_block_view().
+*/
+function regiomino_cart_block_view($delta = '') {
+  switch($delta){
+		case 'regiomino_checkout_coupon':
+			if(user_access('access content')){
+				$block['content'] = drupal_get_form('regiomino_cart_enter_coupon_form');
+			}
+			return $block;  
+			
+    case 'regiomino_add_to_cart':
+			$block['subject'] = t('Add to cart');
+			if(user_access('access content')){
+				$block['content'] = drupal_get_form('regiomino_cart_qty_select_form');
+			}
+			return $block;  
+		
+		case 'regiomino_cart_block':
+
+			$block['subject'] = t('Your shopping cart');
+			if(user_access('access content')){
+		
+				$carttext = regiomino_cart_get_cart_block_text(TRUE);
+
+				$block['content'] = theme('regiomino_cart_theme_cart_block', array(
+															'vars' => array(
+																'carttext' => $carttext,
+															),
+														));
+			}
+
+			return $block;
+			
+		case 'regiomino_checkout_block':
+
+			$block['subject'] = t('Your checkout information');
+			if(user_access('access content')){
+				$block['content'] = '';
+				
+				$current_path = current_path();
+				switch($current_path) {
+					case 'checkout/shippingaddress':
+						$block['content'] .= regiomino_cart_get_checkout_info_shipping();
+						
+					break;
+					case 'checkout/payment':
+						$block['content'] .= regiomino_cart_get_checkout_info_shipping();
+						$block['content'] .= '<br /><br />';
+						$block['content'] .= regiomino_cart_get_checkout_info_shippingaddress();
+						
+					break;
+					case 'checkout/verify':
+						$block['content'] .= regiomino_cart_get_checkout_info_shipping();
+						$block['content'] .= '<br /><br />';
+						$block['content'] .= regiomino_cart_get_checkout_info_shippingaddress();
+						$block['content'] .= '<br /><br />';
+						$block['content'] .= regiomino_cart_get_checkout_info_payment();
+						
+					break;
+				}
+
+				
+				/*
+				global $user;
+				$userobject = user_load($user->uid);
+				
+				//Display billing address
+				$billingaddressitems = field_get_items('user', $userobject, 'field_billingaddress');
+				$block['content'] .= '<p><strong>' . t('Your billing address') . '</strong><br />' . $billingaddressitems[0]['first_name'] . ' ' . $billingaddressitems[0]['last_name'] . '<br />' . $billingaddressitems[0]['thoroughfare'];
+				if(isset($billingaddressitems[0]['premise']) && !empty($billingaddressitems[0]['premise'])) $block['content'] .= '<br />' . $billingaddressitems[0]['premise'];
+				$block['content'] .= '<br />' . $billingaddressitems[0]['postal_code'] . ' ' . $billingaddressitems[0]['locality'] . '<br /><span class="small">(<a href="' . url('user/' . $user->uid . '/edit', array('query' => array('destination' => 'cart'))) . '">' . t('edit') . '</a>)</span></p>';
+				
+				$current_path = current_path();
+				if($current_path != 'checkout/shipping') {
+
+					$query = new EntityFieldQuery;
+					$cartitemids = $query
+					->entityCondition('entity_type', 'regiomino_cart')
+					->propertyCondition('cart_id', $user->uid)
+					->execute();
+
+					$cartitems = entity_load('regiomino_cart', array_keys($cartitemids['regiomino_cart']));
+
+					foreach($cartitems as $cartitemid=>$cartitemobject) {
+						$shippingkey = $cartitemobject->shipping_type;
+					}
+					
+					if($shippingkey == 'bringlivery') {
+						//Display shipping address (later only display this if shipping has been selected
+						$shippingaddressitems = field_get_items('user', $userobject, 'field_address');
+						$diff = array_diff($billingaddressitems[0], $shippingaddressitems[0]);
+						$block['content'] .= '<p><strong>' . t('Your shipping address') . '</strong><br />';
+						if(empty($diff)) {
+							$block['content'] .= t('Same as billing address');
+						}
+						else {
+							$block['content'] .= $shippingaddressitems[0]['first_name'] . ' ' . $shippingaddressitems[0]['last_name'] . '<br />' . $shippingaddressitems[0]['thoroughfare'];
+							if(isset($shippingaddressitems[0]['premise']) && !empty($shippingaddressitems[0]['premise'])) $block['content'] .= '<br />' . $shippingaddressitems[0]['premise'];
+							$block['content'] .= '<br />' . $shippingaddressitems[0]['postal_code'] . ' ' . $shippingaddressitems[0]['locality'];
+						}
+						$block['content'] .= '<br /><span class="small">(<a href="' . url('user/' . $user->uid . '/edit', array('query' => array('destination' => 'cart'))) . '">' . t('edit') . '</a>)</span></p>';
+						
+						//Display alternative delivery location (if set)
+						$altarray = array(
+							'garage' => t('Carport or Garage'),
+							'terrace' => t('Terrace'),
+							'frontdoor' => t('Leave at the front door'),
+							'backdoor' => t('Leave at the backdoor'),
+							'neighbour' => t('Leave with the neighbour'),
+						);
+						if($userobject->field_alternativelocation[LANGUAGE_NONE][0]['value'] != "") {
+							$block['content'] .= '<p><strong>' . t('Alternative dropoff') . '</strong>: ' . $altarray[$userobject->field_alternativelocation[LANGUAGE_NONE][0]['value']] . '<br /><span class="small">(<a href="' . url('user/' . $user->uid . '/edit', array('query' => array('destination' => 'cart'))) . '">' . t('edit') . '</a>)</span></p>';
+						}
+					}
+					$query = new EntityFieldQuery;
+					$shippingtype_ids = $query
+						->entityCondition('entity_type', 'node')
+						->propertyCondition('type', 'deliverytype')
+						->fieldOrderBy('field_weight', 'value')
+						->execute();
+
+					$shipping_types = entity_load('node', array_keys($shippingtype_ids['node']));
+					$shipping = array();
+					foreach($shipping_types as $key=>$value) {
+						$shipping[$value->field_deliverykey[LANGUAGE_NONE][0]['value']] = $value->title;
+					}
+					$block['content'] .= '<p><strong>' . t('Shipping') . '</strong>: ' . $shipping[$shippingkey] . '</p>';
+				}
+				
+				$current_path = current_path();
+				if($current_path != 'checkout/shipping' && $current_path != 'checkout/payment') {
+					$paymentkey = $userobject->field_payment['und'][0]['value'];
+					$query = new EntityFieldQuery;
+					$paymenttype_ids = $query
+						->entityCondition('entity_type', 'node')
+						->propertyCondition('type', 'paymenttype')
+						->fieldOrderBy('field_weight', 'value')
+						->execute();
+
+					$payment_types = entity_load('node', array_keys($paymenttype_ids['node']));
+					$payment = array();
+					foreach($payment_types as $key=>$value) {
+						$payment[$value->field_paymentkey[LANGUAGE_NONE][0]['value']] = $value->title;
+					}
+					$block['content'] .= '<p><strong>' . t('Payment') . '</strong>: ' . $payment[$paymentkey] . '</p>';
+				} */
+				
+				
+			}
+
+			return $block;
+
+		case 'regiomino_checkout_invoice':
+
+			$block['subject'] = '';
+			if(user_access('access content')){
+				$block['content'] = '';
+				
+				$warenkorb = regiomino_cart_load_cart();
+				$valueaddup = 0;
+				$orderaddup = 0;
+				$vataddup = 0;
+				$shipping = 0;
+				$counter = 1;
+				foreach($warenkorb as $verkaeuferkey=>$verkaeufervalue) {
+				
+					//Retrieve selected shipping type for use in #default_value key of form element
+					foreach($verkaeufervalue['product'] as $fkey => $fvalue) {
+						//Since shipping is the same for all items of this current seller, it doesn't matter which one we take.
+						//Just loop through all cart item id's and take the last.
+						$my_cart_item_id = $fkey;
+					}
+					//Retrieve shipping type for cart item id from db and write in variable			
+					$shippingvalue = $verkaeufervalue['product'][$my_cart_item_id]['shipping_type'];
+					//Retrieve shipping type for cart item id from db and write in variable	
+					$shippingoption = $verkaeufervalue['product'][$my_cart_item_id]['shipping_option'];
+					//Select chosen delivery options
+					$shippingoptionarray = explode("-", $shippingoption);
+					$shipping += $shippingoptionarray[5];
+					
+					foreach($verkaeufervalue['product'] as $productkey=>$productvalue) {
+						$valueaddup += $productvalue['gesamt'];
+						$vataddup += $productvalue['gesamt_mwst'];
+						$counter++;
+					}	
+				}
+				//Sum up costs for shipping
+				$shippingtax = 19;
+				$shippingtaxamount = $shipping * $shippingtax / ($shippingtax + 100);
+				$valueaddup += $shipping;
+				$vataddup += $shippingtaxamount;
+				$orderaddup += $valueaddup;
+
+				global $user;
+				$userobject = user_load($user->uid);
+				$balance = (float)userpoints_get_current_points($user->uid, 446);
+				if($balance < 0) $balance = 0;
+				if($balance > $orderaddup) {
+					$usedbalance = $orderaddup;
+				}
+				else {
+					$usedbalance = $balance;
+				}
+				$leftoverbalance = $balance - $usedbalance;
+				$topay = $orderaddup - $balance;
+				if($topay < 0) $topay = 0;
+				
+				$block['content'] = '
+				
+				<table id="checkoutinvoice">
+						<tr>
+							<td class="desc">Gesamtbetrag der Bestellung</td><td class="numbers">' . number_format($orderaddup, 2, ",", ".") . ' &euro;</td>
+						</tr>
+						<tr>
+							<td class="desc">' . t('Used balance') . '</td><td class="numbers">' . number_format(-$usedbalance, 2, ",", ".") . ' &euro;</td>
+						</tr>
+						<tr class="total">
+							<td class="desc">' . t('Total to be paid') . '</td><td class="numbers">' . number_format($topay, 2, ",", ".") . ' &euro;</td>
+						</tr>
+				</table>
+				
+				';
+			}
+
+			return $block;
+
+		case 'regiomino_checkout_steps':
+
+			$block['subject'] = '';
+			if(user_access('access content')){	
+				$steps = array('checkout/shipping' => t('Shipping'), 'checkout/shippingaddress' => t('Address'), 'checkout/payment' => t('Payment'), 'checkout/verify' => t('Confirmation'));
+				$block['content'] = '		
+					<ul id="checkoutsteps">';
+				$counter = 0;
+				foreach($steps as $key => $value) {
+					$counter++;
+					if(current_path() != $key) {
+						$block['content'] .= '<li>' . $value. ' 0' . $counter . '</li>';
+					}
+					else {
+						$block['content'] .= '<li><span class="currentdesc">' . $value. '</span> <span class="currentstep">0' . $counter . '</span></li>';
+					}
+				}				
+
+			}
+
+			return $block;
+	}
+}
+
+function regiomino_cart_get_checkout_info_payment() {
+	$return = drupal_static(__FUNCTION__);
+	if(!isset($return)) {
+		global $user;
+		$userobject = user_load($user->uid);
+		$paymentkey = $userobject->field_payment['und'][0]['value'];
+		$query = new EntityFieldQuery;
+		$paymenttype_ids = $query
+			->entityCondition('entity_type', 'node')
+			->propertyCondition('type', 'paymenttype')
+			->fieldOrderBy('field_weight', 'value')
+			->execute();
+		$payment_types = entity_load('node', array_keys($paymenttype_ids['node']));
+		$payment = array();
+		foreach($payment_types as $key=>$value) {
+			$payment[$value->field_paymentkey[LANGUAGE_NONE][0]['value']] = $value->title;
+		}
+		$return = t('<strong>Payment</strong>:<br />@type', array('@type' => $payment[$paymentkey]));
+	}
+	return $return;
+}
+
+function regiomino_cart_get_checkout_info_shippingaddress() {
+	$return = drupal_static(__FUNCTION__);
+	if(!isset($return)) {
+		global $user;
+		
+		// $query = new EntityFieldQuery;
+		// $cartitemids = $query
+		// ->entityCondition('entity_type', 'regiomino_cart')
+		// ->propertyCondition('cart_id', $user->uid)
+		// ->execute();
+
+		// $cartitems = entity_load('regiomino_cart', array_keys($cartitemids['regiomino_cart']));
+		
+		$shippingkey = regiomino_cart_get_shippingkey($user->uid);
+
+		$userobject = user_load($user->uid);
+		//Display shipping address (later only display this if shipping has been selected
+		$shippingaddressitems = field_get_items('user', $userobject, 'field_shippingaddress');
+		$billingaddressitems = field_get_items('user', $userobject, 'field_billingaddress');
+		
+		$handlers_name = array('address' => 'name-full');
+		$handlers_address = array('address' => 'address');
+		$context = array('mode' => 'render'); 
+		$shippingaddress = drupal_render(addressfield_generate($shippingaddressitems[0], $handlers_name, $context)) . drupal_render(addressfield_generate($shippingaddressitems[0], $handlers_address, $context));
+		$billingaddress = drupal_render(addressfield_generate($billingaddressitems[0], $handlers_name, $context)) . drupal_render(addressfield_generate($billingaddressitems[0], $handlers_address, $context));
+		$diff = array_diff($billingaddressitems[0], $shippingaddressitems[0]);
+		if(empty($diff)) {
+			$types = t('shipping/billing address');
+			$additionaloutput = '';
+		}
+		else {
+			$types = t('shipping address');
+			$types2 = t('billing address');
+			$additionaloutput = '<br /><br />' . t('<strong>My @types</strong>:!address', array('@types' => $types2, '!address' => $billingaddress));
+		}
+
+		if($shippingkey != 'centralpickup') {
+			$return = t('<strong>My @types</strong>:!address', array('@types' => $types, '!address' => $shippingaddress)) . $additionaloutput;
+		}
+		else {
+			$return = t('<strong>My @types</strong>:!address', array('@types' => t('billing address'), '!address' => $billingaddress));
+		}
+	}
+	return $return;
+}
+
+function regiomino_cart_get_checkout_info_shipping() {
+	$return = drupal_static(__FUNCTION__);
+	if(!isset($return)) {
+		global $user;
+		
+		// $query = new EntityFieldQuery;
+		// $cartitemids = $query
+		// ->entityCondition('entity_type', 'regiomino_cart')
+		// ->propertyCondition('cart_id', $user->uid)
+		// ->execute();
+
+		// $cartitems = entity_load('regiomino_cart', array_keys($cartitemids['regiomino_cart']));
+		
+		$query = new EntityFieldQuery();
+		$cartqry = $query
+			->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', array('cart'))
+			->propertyCondition('status', 1)
+				->fieldCondition('field_user_reference', 'target_id', $user->uid)
+			->execute();
+		
+		if(isset($cartqry['node'])) {
+			$cartkey = array_keys($cartqry['node']);
+			$nodeobject = node_load($cartkey[0]);
+			$field_collection_item_values = array();
+			if(isset($nodeobject->field_cart_items[LANGUAGE_NONE]) && !empty($nodeobject->field_cart_items[LANGUAGE_NONE])) {
+				foreach($nodeobject->field_cart_items[LANGUAGE_NONE] as $fcivalues) {
+					$field_collection_item_values[] = $fcivalues['value'];
+				}
+			}
+			if(!empty($field_collection_item_values)) {
+				$field_collection_items = entity_load('field_collection_item', $field_collection_item_values);
+			}
+			if(!empty($field_collection_items)) {
+				$cartitems = array();
+				foreach($field_collection_items as $fcikey => $fcivalue) {
+					$cartitems[$fcikey] = new stdClass();
+					$cartitems[$fcikey]->nid = $fcivalue->field_offer[LANGUAGE_NONE][0]['target_id'];
+					$cartitems[$fcikey]->qty = $fcivalue->field_amount[LANGUAGE_NONE][0]['value'];
+					$cartitems[$fcikey]->shipping_type = $fcivalue->field_deliverykey[LANGUAGE_NONE][0]['value'];
+					$cartitems[$fcikey]->shipping_option = $fcivalue->field_deliveryoption[LANGUAGE_NONE][0]['value'];
+				}
+			}
+		}
+
+		foreach($cartitems as $cartitemid=>$cartitemobject) {
+			$shippingkey = $cartitemobject->shipping_type;
+			$shippingoption_tmp = $cartitemobject->shipping_option;
+		}
+		$shippingoption = explode('-', $shippingoption_tmp);
+		$deliverystart = date('d.m.Y, H:i', $shippingoption[1]);
+		$deliveryend = date('H:i', $shippingoption[2]);
+		$delivery = $deliverystart . ' - ' . $deliveryend;
+		
+		$query = new EntityFieldQuery;
+		$shippingtype_ids = $query
+			->entityCondition('entity_type', 'node')
+			->propertyCondition('type', 'deliverytype')
+			->fieldOrderBy('field_weight', 'value')
+			->execute();
+
+		$shipping_types = entity_load('node', array_keys($shippingtype_ids['node']));
+		$shipping = array();
+		foreach($shipping_types as $key=>$value) {
+			$shipping[$value->field_deliverykey[LANGUAGE_NONE][0]['value']] = $value->title;
+		}
+		if($shippingkey == 'centralpickup') {
+			$fcitem = field_collection_item_load($shippingoption[6]);
+			$shpout = $shipping[$shippingkey] . ' ' . $fcitem->field_address[LANGUAGE_NONE][0]['name_line'];
+		}
+		else {
+			$shpout = $shipping[$shippingkey];
+		}
+		$return =	t('<strong>My delivery option</strong>:<br />@type on @date', array('@type' => $shpout, '@date' => $delivery));
+	}
+	return $return;
+}
+
+function regiomino_cart_get_cart_block_text($return = FALSE) {
+
+	setlocale(LC_MONETARY, 'de_DE');
+	global $user;
+	if ($user->uid) {
+		$cart_id = $user->uid;
+	}
+	else {
+		$cart_id = session_id();
+	}
+	
+	$cart_array = regiomino_cart_get_cart_summary($cart_id);
+	$sum = 0;
+	$noofrows = 0;
+
+	foreach($cart_array as $key=>$value) {
+		$nodeobject = node_load($value['nid']);
+		if($nodeobject) {
+			
+			$availability = regiomino_offer_availability($nodeobject, $value['qty']);
+			
+			switch($availability->available) {
+				case 0:
+					$value['qty'] = 0;
+					break;
+				case 1:
+					$value['qty'] = end($availability->stock);
+					break;					
+			}			
+			
+			$sum += regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', $value['qty'], 'field_tu_gross');
+			$noofrows++;
+		}
+	}
+
+	$wording = $noofrows == 1 ? t('article') : t('articles');
+	$sumformatted = number_format($sum, 2, ",", ".") . ' &euro;';
+	$output = format_plural($noofrows, '1 article<span>!amount</span>', '@count articles <span>!amount</span>', array('!amount' => $sumformatted));
+	if($return) {
+		return $output;
+	}
+	else {
+		print $output;
+	}
+}
+
+function regiomino_cart_get_cart_summary($cart_id) {
+
+ 	//$query = db_query("SELECT cart_item_id, qty, nid FROM {regiomino_cart} WHERE cart_id = :cart_id", array(':cart_id' => $cart_id));
+	
+	$query = new EntityFieldQuery();
+	$cartqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('cart'))
+		->propertyCondition('status', 1)
+		->fieldCondition('field_session_id', 'value', $cart_id)
+		->execute();
+
+	if(!isset($cartqry['node']) && $cart_id > 0) {
+		$query = new EntityFieldQuery();
+		$cartqry = $query
+			->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', array('cart'))
+			->propertyCondition('status', 1)
+			->fieldCondition('field_user_reference', 'target_id', $cart_id)
+			->execute();
+	}
+	$cart_array = array();
+	
+	if(isset($cartqry['node'])) {
+		$cartkey = array_keys($cartqry['node']);
+		$nodeobject = node_load($cartkey[0]);
+		$field_collection_item_values = array();
+		if(isset($nodeobject->field_cart_items[LANGUAGE_NONE]) && !empty($nodeobject->field_cart_items[LANGUAGE_NONE])) {
+			foreach($nodeobject->field_cart_items[LANGUAGE_NONE] as $fcivalues) {
+				$field_collection_item_values[] = $fcivalues['value'];
+			}
+		}
+		if(!empty($field_collection_item_values)) {
+			$field_collection_items = entity_load('field_collection_item', $field_collection_item_values);
+		}
+		if(!empty($field_collection_items)) {
+			foreach($field_collection_items as $fcikey => $fcivalue) {
+				$cart_array[$fcikey]['qty'] = $fcivalue->field_amount[LANGUAGE_NONE][0]['value'];
+				$cart_array[$fcikey]['nid'] = $fcivalue->field_offer[LANGUAGE_NONE][0]['target_id'];
+			}
+		}
+	}
+	
+	return $cart_array;
+}
+
+/**
+* Implementation of regiomino_cart_qty_select_form. form for adding selected quantities to cart.
+*/
+function regiomino_cart_enter_coupon_form($form, &$form_state) {
+	
+	$form['coupon'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Coupon'),
+		'#description' => t('If you have a coupon code you can enter it here'),
+		'#attributes' => array(
+			'placeholder' => t('Your coupon code'),
+		),
+	);
+
+	$form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => t('Enter coupon'),
+	);
+	
+	return $form;
+}
+
+/**
+* Submit procedures of regiomino_cart_qty_select_form.
+*/
+function regiomino_cart_enter_coupon_form_validate($form, &$form_state) {
+	$couponcode = $form_state['values']['coupon'];
+	$validcodes = array('BAMBERG3');	
+	if(!in_array($couponcode, $validcodes)) {
+		form_set_error('coupon', t('Your coupon code is invalid. Please contact us if you believe that this is not correct.'));
+	}
+	else {
+		global $user;
+		$sql = db_query("SELECT txn_id FROM {userpoints_txn} WHERE uid = " . $user->uid . " AND reference = '" . 'coupon_rebate_' . $couponcode . "'");
+		$sqlresults = $sql->fetchObject();
+		if(is_object($sqlresults)) {
+			form_set_error('coupon', t('Your coupon code was already submitted to your account. Please contact us if you believe that this is not correct.'));
+		}
+	}
+}
+
+/**
+* Submit procedures of regiomino_cart_qty_select_form.
+*/
+function regiomino_cart_enter_coupon_form_submit($form, &$form_state) {
+	$points = 5;
+	$description = t('Discount coupon @couponcode', array('@couponcode' => $form_state['values']['coupon']));
+	$reference = 'coupon_rebate_' . $form_state['values']['coupon'];
+	
+	global $user;
+	$uid = $user->uid;
+	$category = 446;
+	$operation = 'customer';
+	$display = FALSE;
+	
+	regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display);
+	
+	drupal_set_message(t('The coupon was added to your account'));
+}
+
+/**
+* Implementation of regiomino_cart_qty_select_form. form for adding selected quantities to cart.
+*/
+function regiomino_cart_qty_select_form($form, &$form_state) {
+
+	$nodeobject = node_load(arg(1));
+	//Check availability for purchasing 1 unit (include items that have already been put in cart)
+	$availability = regiomino_offer_availability($nodeobject, 1);
+	$stock_array = $availability->stock;
+	
+
+	switch($availability->available) {
+		case 0:
+			$disabled = TRUE;
+			$description = $availability->message;
+			//drupal_set_message($description, 'warning');
+			break;
+		default:
+			$disabled = FALSE;
+			$description = t('Select the quantity you wish to purchase');
+			break;
+	}
+	$cartbuttonvalue = 'In den Warenkorb';
+	
+	$deliveryoptions = regiomino_shipping_get_available_pickupdates($nodeobject->nid, 'bringlivery', FALSE, TRUE);
+	$deliverycoptions = regiomino_shipping_get_available_pickupdates($nodeobject->nid, 'centralpickup', FALSE, TRUE);
+	
+	$availableforselection = FALSE;
+	switch($_SESSION['geolocation_data']['type']) {
+		case 'bringlivery':
+			$deliveryoptionstmp = array_keys($deliveryoptions);
+		break;
+		case 'centralpickup':
+			$deliveryoptionstmp = array_keys($deliverycoptions);
+		break;
+	}
+	if(in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptionstmp)) $availableforselection = TRUE;
+	
+	if((!empty($deliveryoptions) || !empty($deliverycoptions)) && $availableforselection) {
+
+	//$form['batc_qty']['#prefix'] = '<h2>' . $formatteddiscountedprice . ' / ' . $unit . '</h2>';
+	$form['batc_qty'] = array(
+		'#disabled' => $disabled,
+	);
+	$form['batc_qty']['qty'] = array(
+		'#type' => 'select',
+		'#title' => t('Qty'),
+		'#options' => $stock_array,
+		'#description' => $description,
+	);
+	
+	$field = field_info_field('field_frequency');
+	$allowed_values = list_allowed_values($field);
+	
+	$subdescr = t('If you need this product regularly, we can ship it to you on a regular basis.');
+	if($nodeobject->field_renewal[LANGUAGE_NONE][0]['value'] && !$disabled) {
+		$subdisabled = FALSE;
+	}
+	else {
+		$subdisabled = TRUE;
+		if(!$disabled) {
+			$subdescr = t('Unfortunately this product cannot be ordered regularly because it is not set to automatic renewal. Feel free to ask the producer to change this by using the contact form below.');
+		}
+	}
+	
+	$form['batc_qty']['frequency'] = array(
+		'#type' => 'select',
+		'#title' => t('Subscription'),
+		'#options' => $allowed_values,
+		'#description' => $subdescr,
+		'#disabled' => $subdisabled,
+		'#default_value' => 0,
+	);
+	
+	$form['batc_qty']['nid'] = array(
+		'#type' => 'value',
+		'#value' => $nodeobject->nid
+	);
+
+	$form['batc_qty']['submit'] = array(
+		'#type' => 'submit',
+		'#value' => $cartbuttonvalue,
+		'#disabled' => $disabled,
+	);
+	
+	}
+	
+	return $form;
+}
+
+/**
+* Submit procedures of regiomino_cart_qty_select_form.
+*/
+function regiomino_cart_qty_select_form_submit($form, &$form_state) {
+	regiomino_cart_add_to_cart($form_state['values']['nid'], $form_state['values']['qty'], $form_state['values']['frequency']);
+	drupal_set_message(t('The selection was added to your shopping cart'));
+}
+
+function regiomino_cart_add_to_cart($nid = 0, $qty = 0, $frq = 0) {
+	
+	if($nid == 0 && $qty == 0) {
+		$nid = $_POST['nid'];
+		$qty = $_POST['qty'];
+		if(isset($_POST['frq'])) $frq = $_POST['frq'];
+	}
+	
+	$nodeobject = node_load($nid);
+	$vid = $nodeobject->vid;
+	
+	//Get user id to use as cart id {regiomino_cart}
+	global $user;
+	if ($user->uid) {
+		$cart_id = $user->uid;
+	}
+	else {
+		$cart_id = session_id();
+	}
+	
+	//Get cartobject
+	$cartobject = regiomino_cart_get_cartobject();
+	//Determine if a field collection item with the current nid already exists
+	$exists = 0;
+	foreach($cartobject['items'] as $fcikey => $fcivalue) {
+		if($fcivalue->field_offer[LANGUAGE_NONE][0]['target_id'] == $nid) {
+			$exists = $fcikey;
+		}
+	}
+	if($exists > 0) {
+		//Update existing field collection item
+		regiomino_cart_update_cart($exists, array('qty' => $qty, 'frequency' => $frq));
+	}
+	else {
+		//Add new field collection item to it
+		$field_collection_item = entity_create('field_collection_item', array('field_name' => 'field_cart_items'));
+		$field_collection_item->setHostEntity('node', $cartobject['cart']);		
+		$field_collection_item->field_offer[LANGUAGE_NONE][0]['target_id'] = $nid;
+		$field_collection_item->field_amount[LANGUAGE_NONE][0]['value'] = $qty;
+		$field_collection_item->field_frequency[LANGUAGE_NONE][0]['value'] = $frq;
+		$field_collection_item->field_deliverykey[LANGUAGE_NONE][0]['value'] = 'default';
+		$field_collection_item->field_deliveryoption[LANGUAGE_NONE][0]['value'] = 'default';
+		$field_collection_item->save();
+	}
+}
+
+function regiomino_cart_get_shippingkey($uid) {
+	$query = new EntityFieldQuery();
+	$cartqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('cart'))
+		->propertyCondition('status', 1)
+			->fieldCondition('field_user_reference', 'target_id', $uid)
+		->execute();
+	
+	if(isset($cartqry['node'])) {
+		$cartkey = array_keys($cartqry['node']);
+		$nodeobject = node_load($cartkey[0]);
+		$field_collection_item_values = array();
+		if(isset($nodeobject->field_cart_items[LANGUAGE_NONE]) && !empty($nodeobject->field_cart_items[LANGUAGE_NONE])) {
+			foreach($nodeobject->field_cart_items[LANGUAGE_NONE] as $fcivalues) {
+				$field_collection_item_values[] = $fcivalues['value'];
+			}
+		}
+		if(!empty($field_collection_item_values)) {
+			$field_collection_items = entity_load('field_collection_item', $field_collection_item_values);
+		}
+		if(!empty($field_collection_items)) {
+			$cartitems = array();
+			foreach($field_collection_items as $fcikey => $fcivalue) {
+				$cartitems[$fcikey] = new stdClass();
+				$cartitems[$fcikey]->nid = $fcivalue->field_offer[LANGUAGE_NONE][0]['target_id'];
+				$cartitems[$fcikey]->qty = $fcivalue->field_amount[LANGUAGE_NONE][0]['value'];
+				$cartitems[$fcikey]->shipping_type = $fcivalue->field_deliverykey[LANGUAGE_NONE][0]['value'];
+				$cartitems[$fcikey]->shipping_option = $fcivalue->field_deliveryoption[LANGUAGE_NONE][0]['value'];
+			}
+		}
+	}
+	
+	foreach($cartitems as $cartitemid=>$cartitemobject) {
+		$shippingkey = $cartitemobject->shipping_type;
+	}
+	
+	return $shippingkey;
+}
+
+function regiomino_cart_update_cart($cart_item_id, $options = array(), $add = FALSE) {
+	if(!empty($options)) {
+		$field_collection_item = field_collection_item_load($cart_item_id);
+		foreach($options as $key => $value) {
+			switch($key) {
+				case 'qty':
+					if($add) {
+						$field_collection_item->field_amount[LANGUAGE_NONE][0]['value'] += $value;
+					}
+					else {
+						$field_collection_item->field_amount[LANGUAGE_NONE][0]['value'] = $value;
+					}
+				break;
+				case 'shipping_type':
+					$field_collection_item->field_deliverykey[LANGUAGE_NONE][0]['value'] = $value;
+				break;
+				case 'shipping_option':
+					$field_collection_item->field_deliveryoption[LANGUAGE_NONE][0]['value'] = $value;
+				break;
+				case 'comments':
+					$field_collection_item->field_comments[LANGUAGE_NONE][0]['value'] = $value;
+				break;
+				case 'frequency':
+					$field_collection_item->field_frequency[LANGUAGE_NONE][0]['value'] = $value;
+				break;
+			}
+		}
+		$field_collection_item->save();
+	}
+}
+
+function regiomino_cart_get_cartobject($uid = NULL) {
+	$query = new EntityFieldQuery();
+	$query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('cart'))
+		->propertyCondition('status', 1);
+	
+	$session_id = session_id();
+	
+	if(is_null($uid)) {
+		global $user;
+		if ($user->uid) {
+			$uid = $user->uid;
+			$query->propertyCondition('uid', $uid);
+		}
+		else {
+			$uid = 0;
+			$query->fieldCondition('field_session_id', 'value', $session_id);
+		}
+	}
+	else {
+		$query->propertyCondition('uid', $uid);
+	}
+	$cartqry = $query->execute();
+	//Check if a cart already exists for the given user. If so, load it, if not, create it
+	if(isset($cartqry['node']) && !empty($cartqry['node'])) {
+		$cartobject = entity_load('node', array_keys($cartqry['node']));
+		$cartobjectkey = array_keys($cartobject);
+		$cartobject = $cartobject[$cartobjectkey[0]];
+		foreach($cartobject->field_cart_items[LANGUAGE_NONE] as $fcivalues) {
+			$field_collection_item_values[] = $fcivalues['value'];
+		}
+		$cartitems = entity_load('field_collection_item', $field_collection_item_values);
+	}
+	else {
+		$cartobject = new stdClass();
+		$cartobject->type = 'cart';
+		$cartobject->is_new = TRUE;
+		$cartobject->title = t('Cart');
+		node_object_prepare($cartobject);
+		$cartobject->language = 'de';
+		$cartobject->uid = $uid;
+		$cartobject->field_session_id[LANGUAGE_NONE][0]['value'] = $session_id;
+		$cartobject->field_user_reference[LANGUAGE_NONE][0]['target_id'] = $uid;
+		$cartobject = node_submit($cartobject);
+		node_save($cartobject);
+		$cartitems = '';
+	}
+	$return = array();
+	$return['cart'] = $cartobject;
+	$return['items'] = $cartitems;
+	return $return;
+}
+
+/**
+* Implementation of hook_cron().
+*/
+function regiomino_cart_cron() {
+	//Garbage collector for entries that are older than variable number of days
+	$numofdays = variable_get('regiomino_max_cart_days', 7);
+	$comparetime = strtotime("-" . $numofdays . " days");
+
+	// $query = db_delete('{regiomino_cart}')
+		// ->condition('changed', $comparetime, '<')
+		// ->execute();
+		
+	$query = new EntityFieldQuery();
+	$cartqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('cart'))
+		->propertyCondition('status', 1)
+		->propertyCondition('changed', $comparetime, '<')
+		->execute();
+	
+	if(isset($cartqry['node'])) {
+		$cartobjects = entity_load('node', array_keys($cartqry['node']));
+		foreach($cartobjects as $nid => $cartobject) {
+			if($cartobject->uid) {
+				regiomino_cart_delete_cart($cartobject->uid);
+			}
+			else {
+				regiomino_cart_delete_cart($cartobject->field_session_id[LANGUAGE_NONE][0]['value']);
+			}
+		}
+	}
+	
+	// if($query > 0) {
+		// //cache_clear_all('cart', 'cache', TRUE);
+		// watchdog('cart', '@amount cart items have been removed, because of inactivity for more than @number days', array('@amount' => $query, '@number' => $numofdays));
+		// drupal_set_message(t('@amount cart items have been removed, because of inactivity for more than @number days', array('@amount' => $query, '@number' => $numofdays)));
+	// }
+		
+}

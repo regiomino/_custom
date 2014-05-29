@@ -1,0 +1,566 @@
+<?php
+
+/**
+* Implementation of hook_menu().
+*/
+function regiomino_subscription_menu() {
+	$items = array();
+	
+	$items['subscription'] = array(
+    'title' => t('Subscription'),
+    'page callback' => 'regiomino_subscription_get_subscription', // function called when path is requested
+    'access arguments' => array('access content'),
+    'file' => 'regiomino_subscription_form.inc',
+  );
+	
+	$items['subscription/remove/%'] = array(
+    'page callback' => 'regiomino_subscription_remove_product',
+    'page arguments' => array(2),
+    'access arguments' => array('access content'),
+	);
+	
+	$items['subscription/pause/%'] = array(
+    'page callback' => 'regiomino_subscription_pause_product',
+    'page arguments' => array(2),
+    'access arguments' => array('access content'),
+	);
+	
+	$items['subscription/unpause/%'] = array(
+    'page callback' => 'regiomino_subscription_unpause_product',
+    'page arguments' => array(2),
+    'access arguments' => array('access content'),
+	);
+
+	$items['addtosubscription'] = array(
+    'page callback' => 'regiomino_subscription_add_to_subscription',
+    'access arguments' => array('access content'),
+	);
+	
+	$items['getsubscriptionblocktext'] = array(
+    'page callback' => 'regiomino_subscription_get_subscription_block_text',
+    'access arguments' => array('access content'),
+	);
+	
+	return $items;
+}
+
+function regiomino_subscription_theme() {
+	return array(
+		'regiomino_subscription_form' => array(
+			'template' => 'regiomino_subscription_theme_form',
+			'render element' => 'form',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+	);
+}
+
+function regiomino_subscription_pause_product($subscription_item_id, $msg = 'The product was paused', $msgtype = 'status', $destination = 'subscription', $goto = TRUE) {
+	regiomino_subscription_update_subscription($subscription_item_id, array('pause' => 1));
+	drupal_set_message(t($msg), $msgtype);
+	if($goto)	drupal_goto($destination);
+}
+
+function regiomino_subscription_unpause_product($subscription_item_id, $msg = 'The product was unpaused', $msgtype = 'status', $destination = 'subscription', $goto = TRUE) {
+	regiomino_subscription_update_subscription($subscription_item_id, array('pause' => 0));
+	drupal_set_message(t($msg), $msgtype);
+	if($goto)	drupal_goto($destination);
+}
+
+function regiomino_subscription_check_cart_for_subscriptions($warenkorb) {
+
+	foreach($warenkorb as $verkaeuferkey=>$verkaeufervalue) {		
+		foreach($verkaeufervalue['product'] as $productkey=>$productvalue) {
+			if($productvalue['frequency'] > 0) {
+				regiomino_subscription_add_to_subscription($productvalue['nid'], $productvalue['menge'], $productvalue['frequency'], $productvalue['shipping_type'], $productvalue['shipping_option']);
+			}
+		}	
+	}
+
+}
+
+function regiomino_subscription_get_subscriptionobject($uid = NULL) {
+
+	if(!isset($uid)) {
+		global $user;
+		if ($user->uid) {
+			$uid = $user->uid;
+		}
+	}
+
+	$query = new EntityFieldQuery();
+	$subqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('foodsubscription'))
+		->propertyCondition('uid', $uid)
+		->execute();
+
+	//Check if a subscription already exists for the given user. If so, load it, if not, create it
+	if(isset($subqry['node']) && !empty($subqry['node'])) {
+		$subscriptionobject = entity_load('node', array_keys($subqry['node']));
+		$subscriptionobjectkey = array_keys($subscriptionobject);
+		$subscriptionobject = $subscriptionobject[$subscriptionobjectkey[0]];
+		foreach($subscriptionobject->field_subscription_items[LANGUAGE_NONE] as $fcivalues) {
+			$field_collection_item_values[] = $fcivalues['value'];
+		}
+		$subscriptionitems = entity_load('field_collection_item', $field_collection_item_values);
+	}
+	else {
+		$subscriptionobject = new stdClass();
+		$subscriptionobject->type = 'foodsubscription';
+		$subscriptionobject->is_new = TRUE;
+		$subscriptionobject->title = t('Subscription');
+		node_object_prepare($subscriptionobject);
+		$subscriptionobject->language = 'de';
+		$subscriptionobject->uid = $uid;
+		$subscriptionobject = node_submit($subscriptionobject);
+		node_save($subscriptionobject);
+		$subscriptionitems = '';
+	}
+	$return = array();
+	$return['foodsubscription'] = $subscriptionobject;
+	$return['items'] = $subscriptionitems;
+	return $return;
+}
+
+function regiomino_subscription_get_next_deliverydate($fci) {
+	$field_collection_item = field_collection_item_load($fci);
+	if(isset($field_collection_item->field_automaticorders[LANGUAGE_NONE][0]['value'])) {
+		$tmpoption = end($field_collection_item->field_automaticorders[LANGUAGE_NONE]);
+	}
+	else {
+		$tmpoption = $field_collection_item->field_firstorder[LANGUAGE_NONE][0]['value'];
+	}
+	$tmp = explode('-', $tmpoption);
+	$lastorderday = strtotime(date('d.m.Y', $tmp[1]));
+	
+	$offerobject = node_load($field_collection_item->field_offer[LANGUAGE_NONE][0]['target_id']);
+	$delay = $offerobject->field_pickupdelay[LANGUAGE_NONE][0]['value'] * 60 * 60;
+	
+	$oneweek = 60 * 60 * 24 * 7;
+	$now = time();
+	
+	if($lastorderday - $delay > $now) {
+		$nextorderday = $lastorderday;
+	}
+	else {
+		$nextorderday = $lastorderday+($oneweek*$frequency);
+	}
+		
+	$avlbpickupdates = regiomino_shipping_get_available_pickupdates($offerobject->nid, $field_collection_item->field_deliverykey[LANGUAGE_NONE][0]['value'], FALSE, FALSE, $field_collection_item->field_frequency[LANGUAGE_NONE][0]['value']*4);
+	
+	foreach($avlbpickupdates as $key => $string) {
+		$tmp = explode('-', $key);
+		$avlbday = strtotime(date('d.m.Y', $tmp[1]));
+		if($nextorderday == $avlbday) {
+			$return = $key;
+		}
+	}
+	return $return;
+	//Berücksichtigt noch nicht, dass Lieferung evtl nicht am selben,
+	//aber dafür an einem anderen Wochentag in der Woche erfolgen kann
+}
+
+function regiomino_subscription_get_next_order_initiation($fci) {
+	$field_collection_item = field_collection_item_load($fci);
+	if(isset($field_collection_item->field_automaticorders[LANGUAGE_NONE][0]['value'])) {
+		$tmpoption = end($field_collection_item->field_automaticorders[LANGUAGE_NONE]);
+	}
+	else {
+		$tmpoption = $field_collection_item->field_firstorder[LANGUAGE_NONE][0]['value'];
+	}
+	$tmp = explode('-', $tmpoption);
+	$lastorderday = strtotime(date('d.m.Y', $tmp[1]));
+	
+	$offerobject = node_load($field_collection_item->field_offer[LANGUAGE_NONE][0]['target_id']);
+	$delay = $offerobject->field_pickupdelay[LANGUAGE_NONE][0]['value'] * 60 * 60;
+	
+	$oneweek = 60 * 60 * 24 * 7;
+	$now = time();
+	
+	if($lastorderday - $delay > $now) {
+		$nextorderday = $lastorderday;
+	}
+	else {
+		$nextorderday = $lastorderday+($oneweek*$frequency);
+	}
+		
+	$avlbpickupdates = regiomino_shipping_get_available_pickupdates($offerobject->nid, $field_collection_item->field_deliverykey[LANGUAGE_NONE][0]['value'], FALSE, FALSE, $field_collection_item->field_frequency[LANGUAGE_NONE][0]['value']*4);
+	
+	foreach($avlbpickupdates as $key => $string) {
+		$tmp = explode('-', $key);
+		$avlbday = strtotime(date('d.m.Y', $tmp[1]));
+		if($nextorderday == $avlbday) {
+			$return = $avlbday - $delay - 3600;
+		}
+	}
+	return $return;
+	//Berücksichtigt noch nicht, dass Lieferung evtl nicht am selben,
+	//aber dafür an einem anderen Wochentag in der Woche erfolgen kann
+}
+
+function regiomino_subscription_add_to_subscription($nid = 0, $qty = 0, $frq = 0, $shptype = '', $shpoption = '') {
+	
+	if($nid == 0 && $qty == 0) {
+		$nid = $_POST['nid'];
+		$qty = $_POST['qty'];
+		if(isset($_POST['frq'])) $frq = $_POST['frq'];
+		if(isset($_POST['shptype'])) $shptype = $_POST['shptype'];
+		if(isset($_POST['shpoption'])) $shpoption = $_POST['shpoption'];
+	}
+	//Get subscriptionobject
+	$subscriptionobject = regiomino_subscription_get_subscriptionobject();
+	
+	//Determine if a field collection item with the current nid already exists
+	$exists = 0;
+	foreach($subscriptionobject['items'] as $fcikey => $fcivalue) {
+		if ($fcivalue->field_offer[LANGUAGE_NONE][0]['target_id'] == $nid &&
+				$fcivalue->field_frequency[LANGUAGE_NONE][0]['value'] == $frq &&
+				$fcivalue->field_deliverykey[LANGUAGE_NONE][0]['value'] == $shptype &&
+				$fcivalue->field_deliveryoption[LANGUAGE_NONE][0]['value'] == $shpoption &&
+				$fcivalue->field_firstorder[LANGUAGE_NONE][0]['value'] == $shpoption) {
+			$exists = $fcikey;
+		}
+	}
+	if($exists > 0) {
+		//Update existing field collection item
+		regiomino_subscription_update_subscription($exists, array('qty' => $qty), TRUE);
+	}
+	else {
+		//Add new field collection item to it
+		$field_collection_item = entity_create('field_collection_item', array('field_name' => 'field_subscription_items'));
+		$field_collection_item->setHostEntity('node', $subscriptionobject['foodsubscription']);		
+		$field_collection_item->field_offer[LANGUAGE_NONE][0]['target_id'] = $nid;
+		$field_collection_item->field_amount[LANGUAGE_NONE][0]['value'] = $qty;
+		$field_collection_item->field_deliverykey[LANGUAGE_NONE][0]['value'] = $shptype;
+		$field_collection_item->field_deliveryoption[LANGUAGE_NONE][0]['value'] = $shpoption;
+		$field_collection_item->field_firstorder[LANGUAGE_NONE][0]['value'] = $shpoption;
+		$field_collection_item->field_frequency[LANGUAGE_NONE][0]['value'] = $frq;
+		$field_collection_item->save();
+	}
+}
+
+function regiomino_subscription_update_subscription($subscription_item_id, $options = array(), $add = FALSE) {
+	if(!empty($options)) {
+		$field_collection_item = field_collection_item_load($subscription_item_id);
+		foreach($options as $key => $value) {
+			switch($key) {
+				case 'offer':
+					$field_collection_item->field_offer[LANGUAGE_NONE][0]['target_id'] = $value;
+				break;
+				case 'qty':
+					if($add) {
+						$field_collection_item->field_amount[LANGUAGE_NONE][0]['value'] += $value;
+					}
+					else {
+						$field_collection_item->field_amount[LANGUAGE_NONE][0]['value'] = $value;
+					}
+				break;
+				case 'shipping_type':
+					$field_collection_item->field_deliverykey[LANGUAGE_NONE][0]['value'] = $value;
+				break;
+				case 'shipping_option':
+					$field_collection_item->field_deliveryoption[LANGUAGE_NONE][0]['value'] = $value;
+				break;
+				case 'firstorder':
+					$field_collection_item->field_firstorder[LANGUAGE_NONE][0]['value'] = $value;
+				break;
+				case 'automaticorders':
+					$field_collection_item->field_automaticorders[LANGUAGE_NONE][]['value'] = $value;
+				break;
+				case 'comment':
+					$field_collection_item->field_comments[LANGUAGE_NONE][0]['value'] = $value;
+				break;
+				case 'frequency':
+					$field_collection_item->field_frequency[LANGUAGE_NONE][0]['value'] = $value;
+				break;
+				case 'pause':
+					$field_collection_item->field_pause[LANGUAGE_NONE][0]['value'] = $value;
+				break;
+			}
+		}
+		$field_collection_item->save();
+	}
+}
+
+function regiomino_subscription_get_shippingkey($uid) {
+	$query = new EntityFieldQuery();
+	$subqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('foodsubscription'))
+		->propertyCondition('uid', $uid)
+		->execute();
+	
+	if(isset($subqry['node'])) {
+		$subkey = array_keys($subqry['node']);
+		$nodeobject = node_load($subkey[0]);
+		$field_collection_item_values = array();
+		if(isset($nodeobject->field_subscription_items[LANGUAGE_NONE]) && !empty($nodeobject->field_subscription_items[LANGUAGE_NONE])) {
+			foreach($nodeobject->field_subscription_items[LANGUAGE_NONE] as $fcivalues) {
+				$field_collection_item_values[] = $fcivalues['value'];
+			}
+		}
+		if(!empty($field_collection_item_values)) {
+			$field_collection_items = entity_load('field_collection_item', $field_collection_item_values);
+		}
+		if(!empty($field_collection_items)) {
+			$subscriptionitems = array();
+			foreach($field_collection_items as $fcikey => $fcivalue) {
+				$subscriptionitems[$fcikey] = new stdClass();
+				$subscriptionitems[$fcikey]->nid = $fcivalue->field_offer[LANGUAGE_NONE][0]['target_id'];
+				$subscriptionitems[$fcikey]->qty = $fcivalue->field_amount[LANGUAGE_NONE][0]['value'];
+				$subscriptionitems[$fcikey]->shipping_type = $fcivalue->field_deliverykey[LANGUAGE_NONE][0]['value'];
+				$subscriptionitems[$fcikey]->shipping_option = $fcivalue->field_deliveryoption[LANGUAGE_NONE][0]['value'];
+				$subscriptionitems[$fcikey]->frequency = $fcivalue->field_frequency[LANGUAGE_NONE][0]['value'];
+			}
+		}
+	}
+	
+	foreach($subscriptionitems as $subscriptionitemid=>$subscriptionitemobject) {
+		$shippingkey = $subscriptionitemobject->shipping_type;
+	}
+	
+	return $shippingkey;
+}
+
+function regiomino_subscription_get_subscription_summary($uid) {
+
+	$query = new EntityFieldQuery();
+	$subqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('foodsubscription'))
+		->propertyCondition('user', $uid)
+		->execute();
+
+	$subscription_array = array();
+	
+	if(isset($subqry['node'])) {
+		$subscriptionkey = array_keys($subqry['node']);
+		$nodeobject = node_load($subscriptionkey[0]);
+		$field_collection_item_values = array();
+		if(isset($nodeobject->field_subscription_items[LANGUAGE_NONE]) && !empty($nodeobject->field_subscription_items[LANGUAGE_NONE])) {
+			foreach($nodeobject->field_subscription_items[LANGUAGE_NONE] as $fcivalues) {
+				$field_collection_item_values[] = $fcivalues['value'];
+			}
+		}
+		if(!empty($field_collection_item_values)) {
+			$field_collection_items = entity_load('field_collection_item', $field_collection_item_values);
+		}
+		if(!empty($field_collection_items)) {
+			foreach($field_collection_items as $fcikey => $fcivalue) {
+				$subscription_array[$fcikey]['qty'] = $fcivalue->field_amount[LANGUAGE_NONE][0]['value'];
+				$subscription_array[$fcikey]['nid'] = $fcivalue->field_offer[LANGUAGE_NONE][0]['target_id'];
+			}
+		}
+	}
+	
+	return $subscription_array;
+}
+
+function regiomino_subscription_load_subscription($subscription_id = NULL) {
+
+	$wares = &drupal_static(__FUNCTION__, array());
+
+	if(!isset($wares[$subscription_id])) {
+
+		//If no subscription_id was passed, use the one of the current user
+		if(!isset($subscription_id)) {
+			global $user;
+			if ($user->uid) {
+				$subscription_id = $user->uid;
+			}
+		}
+
+		$query = new EntityFieldQuery();
+		$subqry = $query
+			->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', array('foodsubscription'))
+			->propertyCondition('uid', $subscription_id)
+			->execute();
+		
+		if(isset($subqry['node'])) {
+			$subkey = array_keys($subqry['node']);
+			$nodeobject = node_load($subkey[0]);
+			$field_collection_item_values = array();
+			if(isset($nodeobject->field_subscription_items[LANGUAGE_NONE]) && !empty($nodeobject->field_subscription_items[LANGUAGE_NONE])) {
+				foreach($nodeobject->field_subscription_items[LANGUAGE_NONE] as $fcivalues) {
+					$field_collection_item_values[] = $fcivalues['value'];
+				}
+			}
+			if(!empty($field_collection_item_values)) {
+				$field_collection_items = entity_load('field_collection_item', $field_collection_item_values);
+			}
+			if(!empty($field_collection_items)) {
+				$subscriptionitems = array();
+				foreach($field_collection_items as $fcikey => $fcivalue) {
+					$subscriptionitems[$fcikey] = new stdClass();
+					$subscriptionitems[$fcikey]->nid = $fcivalue->field_offer[LANGUAGE_NONE][0]['target_id'];
+					$subscriptionitems[$fcikey]->qty = $fcivalue->field_amount[LANGUAGE_NONE][0]['value'];
+					$subscriptionitems[$fcikey]->shipping_type = $fcivalue->field_deliverykey[LANGUAGE_NONE][0]['value'];
+					$subscriptionitems[$fcikey]->shipping_option = $fcivalue->field_deliveryoption[LANGUAGE_NONE][0]['value'];
+					$subscriptionitems[$fcikey]->frequency = $fcivalue->field_frequency[LANGUAGE_NONE][0]['value'];
+					$subscriptionitems[$fcikey]->firstorder = $fcivalue->field_firstorder[LANGUAGE_NONE][0]['value'];
+					$subscriptionitems[$fcikey]->pause = $fcivalue->field_pause[LANGUAGE_NONE][0]['value'];
+					$subscriptionitems[$fcikey]->frequency = $fcivalue->field_frequency[LANGUAGE_NONE][0]['value'];
+				}
+			}
+		}
+
+		$abokiste = array();
+		if(isset($subscriptionitems)) {
+			foreach($subscriptionitems as $subscriptionitemid=>$subscriptionitemobject) {
+			
+				$subscriptionitemnode = node_load($subscriptionitemobject->nid);
+				$subscriptionitemselleruser = user_load($subscriptionitemnode->uid);
+				$subscriptionitemsellerprofile = node_load($subscriptionitemselleruser->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+			
+				
+				//Berechnungen
+				$productimage = array(
+				'style_name' => 'thumbnail_cart',
+				'path' => $subscriptionitemnode->field_image[LANGUAGE_NONE][0]['uri'],
+				'width' => '',
+				'height' => '',
+				'alt' => $subscriptionitemnode->field_image[LANGUAGE_NONE][0]['alt'],
+				'title' => $subscriptionitemnode->field_image[LANGUAGE_NONE][0]['title'],
+				'attributes' => array('class' => 'productimage'),
+				);
+				
+
+				//Übertrag Verkäuferinfos in Array
+				$abokiste[$subscriptionitemselleruser->name]['profile']['profil_nid'] = $subscriptionitemsellerprofile->nid;
+				$abokiste[$subscriptionitemselleruser->name]['profile']['profilobject'] = $subscriptionitemsellerprofile;
+				$abokiste[$subscriptionitemselleruser->name]['profile']['ort'] = $subscriptionitemsellerprofile->field_address[LANGUAGE_NONE][0]['locality'];
+				$abokiste[$subscriptionitemselleruser->name]['profile']['users_profile_title'] = $subscriptionitemsellerprofile->title;
+				
+				//Übertrag Produktinfos in Array
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['image'] = theme('image_style',$productimage);
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['title'] = $subscriptionitemnode->title;
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['dauer'] = $subscriptionitemnode->field_duration[LANGUAGE_NONE][0]['value'];
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['mwst'] = rtrim(rtrim(number_format($subscriptionitemnode->field_salestax[LANGUAGE_NONE][0]['value'], 2, ",", "."), '0'), ',') . "%";
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['mwst_wert'] = $subscriptionitemnode->field_salestax[LANGUAGE_NONE][0]['value'];
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['preis'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, TRUE, TRUE, 'private', 1, 'field_tu_gross');
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['preis_wert'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, 'private', 1, 'field_tu_gross');
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['einzelpreis_wert'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, 'field_tu_gross') / $cartitemobject->qty;
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['gesamt'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, 'field_tu_gross');
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['gesamt_mwst'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, 'field_tu_vat');
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['includedvat'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, 'private', 1, 'field_tu_vat');
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['einheit_amount'] = $subscriptionitemnode->field_packingunit[LANGUAGE_NONE][0]['first'];
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['einheit_unit'] = $subscriptionitemnode->field_packingunit[LANGUAGE_NONE][0]['second'];
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['einheit'] = rtrim(rtrim(number_format($subscriptionitemnode->field_packingunit[LANGUAGE_NONE][0]['first'], 2, ",", "."), '0'), ',') . ' ' . t(strip_tags($subscriptionitemnode->field_packingunit[LANGUAGE_NONE][0]['second']));
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['shipping_weight'] = $subscriptionitemnode->field_shippingweight[LANGUAGE_NONE][0]['value'];
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['pickupdelay'] = $subscriptionitemnode->field_pickupdelay[LANGUAGE_NONE][0]['value'];
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['menge'] = $subscriptionitemobject->qty;
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['nid'] = $subscriptionitemnode->nid;
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['nodeobject'] = $subscriptionitemnode;
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['vid'] = $subscriptionitemnode->vid;
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['shipping_type'] = $subscriptionitemobject->shipping_type;
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['shipping_option'] = $subscriptionitemobject->shipping_option;
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['pause'] = $subscriptionitemobject->pause;
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['firstorder'] = $subscriptionitemobject->firstorder;
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['frequency'] = $subscriptionitemobject->frequency;
+			}
+		}
+		$wares[$subscription_id] = $abokiste;
+	}
+	return $wares[$subscription_id];
+}
+
+function regiomino_subscription_remove_product($subscription_item_id, $msg = 'The product was removed from your subscription', $msgtype = 'status', $destination = 'subscription', $goto = TRUE) {
+	
+	$query = new EntityFieldQuery();
+	$subqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('foodsubscription'))
+		->fieldCondition('field_subscription_items', 'value', $subscription_item_id)
+		->execute();
+	$subkey = array_keys($subqry['node']);
+	$subobject = node_load($subkey[0]);
+	foreach($subobject->field_subscription_items[LANGUAGE_NONE] as $key => $values) {
+		if($values['value'] == $subscription_item_id) {
+			unset($subobject->field_subscription_items[LANGUAGE_NONE][$key]);
+		}
+	}
+	if(empty($subobject->field_subscription_items[LANGUAGE_NONE])) {
+		unset($subobject->field_subscription_items);
+	}
+	node_save($subobject);
+	entity_delete_multiple('field_collection_item', array($subscription_item_id));
+	
+	drupal_set_message(t($msg), $msgtype);
+	if($goto)	drupal_goto($destination);
+}
+
+function regiomino_subscription_get_subscription_block_text($return = FALSE) {
+
+	setlocale(LC_MONETARY, 'de_DE');
+	global $user;
+	
+	$subscription_array = regiomino_subscription_get_subscription_summary($user->uid);
+	$sum = 0;
+	$noofrows = 0;
+
+	foreach($subscription_array as $key=>$value) {
+		$nodeobject = node_load($value['nid']);
+		if($nodeobject) {
+			
+			$availability = regiomino_offer_availability($nodeobject, $value['qty']);
+			
+			switch($availability->available) {
+				case 0:
+					$value['qty'] = 0;
+					break;
+				case 1:
+					$value['qty'] = end($availability->stock);
+					break;					
+			}
+
+			$sum += regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, 'private', $value['qty'], 'field_tu_gross');
+			$noofrows++;
+		}
+	}
+
+	$wording = $noofrows == 1 ? t('article') : t('articles');
+	$sumformatted = number_format($sum, 2, ",", ".") . ' &euro;';
+	$output = format_plural($noofrows, '1 article<span>!amount</span>', '@count articles <span>!amount</span>', array('!amount' => $sumformatted));
+	if($return) {
+		return $output;
+	}
+	else {
+		print $output;
+	}
+}
+
+function regiomino_subscription_empty_subscription($sub_id = NULL) {
+
+	if(!isset($sub_id)) {
+		global $user;
+		if ($user->uid) {
+			$sub_id = $user->uid;
+		}
+	}
+	
+	$query = new EntityFieldQuery();
+	$subqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('foodsubscription'))
+		->propertyCondition('status', 1)
+		->propertyCondition('uid', $sub_id)
+		->execute();
+
+
+	if(isset($subqry['node'])) {
+		$subkey = array_keys($subqry['node']);
+		$nodeobject = node_load($subkey[0]);
+		if(isset($nodeobject->field_subscription_items[LANGUAGE_NONE][0]['value'])) {
+			return FALSE;
+		}
+		else {
+			return TRUE;
+		}
+	}
+	else {
+		return TRUE;
+	}
+}

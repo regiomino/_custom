@@ -1,0 +1,256 @@
+<?php
+
+/**
+* Implementation of hook_block_info().
+*/
+function regiomino_menu_block_info() {
+  $blocks['regiomino_menu_block'] = array(
+    'info' => t('Regiomino Menu'), //The name that will appear in the block list.
+    'cache' => DRUPAL_CACHE_GLOBAL, //Default
+  );
+  // $blocks['regiomino_menu_footer_block'] = array(
+    // 'info' => t('Regiomino Footer Menu'), //The name that will appear in the block list.
+    // 'cache' => DRUPAL_CACHE_GLOBAL, //Default
+  // );
+  // $blocks['regiomino_menu_social_block'] = array(
+    // 'info' => t('Regiomino Social Menu'), //The name that will appear in the block list.
+    // 'cache' => DRUPAL_CACHE_GLOBAL, //Default
+  // );
+  // $blocks['regiomino_menu_contact_block'] = array(
+    // 'info' => t('Regiomino Contact Form'), //The name that will appear in the block list.
+    // 'cache' => DRUPAL_CACHE_GLOBAL, //Default
+  // );
+  return $blocks;
+}
+
+function regiomino_menu_theme() {
+	return array(
+		'regiomino_menu_theme_menu' => array(
+			'template' => 'regiomino_menu_menu',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		// 'regiomino_menu_theme_footer_menu' => array(
+			// 'template' => 'regiomino_menu_footer_menu',
+			// 'variables' => array(
+				// 'vars' => NULL,
+			// )
+		// ),
+		// 'regiomino_menu_theme_social_menu' => array(
+			// 'template' => 'regiomino_menu_social_menu',
+			// 'variables' => array(
+				// 'vars' => NULL,
+			// )
+		// ),
+		// 'regiomino_menu_theme_contact_form' => array(
+			// 'template' => 'regiomino_menu_contact_form',
+			// 'variables' => array(
+				// 'vars' => NULL,
+			// )
+		// ),
+	);
+}
+
+/**
+* Implementation of hook_menu().
+*/
+function regiomino_menu_menu() {
+	$items = array();
+	
+	$items['admin/config/regiomino/menu'] = array(
+    'title' => 'Regiomino menu settings',
+    'description' => 'Make settings for regiomino menu.',
+    'page callback' => 'drupal_get_form', // function called when path is requested
+    'page arguments' => array('regiomino_menu_admin_settings'), // form id passed to the function
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'regiomino_menu.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_menu'),
+  );
+
+	return $items;
+}
+
+/**
+* Implementation of hook_block_view().
+*/
+function regiomino_menu_block_view($delta = '') {
+  switch($delta){
+    case 'regiomino_menu_block':
+			$block['subject'] = t('Regiomino Menu');
+			if(user_access('access content')){
+			
+				$rm_menu_tree = array();
+
+				//Store vocabulary id for later use
+				$vid = 2;
+				$parentitems = taxonomy_get_tree($vid, 0, 1);
+
+				//Only proceed if parent items were found to avoid unnecessary php notices
+				if(isset($parentitems) && !empty($parentitems)) {
+					//Iterate through all parent items to build li elements
+					foreach($parentitems as $key=>$value) {
+						
+						$time = time();
+						$variablecacheexpire = variable_get('regiomino_menu_cache_expire', 1);
+						$cacheexpire = $time - $variablecacheexpire;
+						$cached = cache_get('productsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $value->tid);
+						if($cached && $cached->created > $cacheexpire) {
+							$productsincategory = $cached->data;
+						}
+						else {
+							cache_clear_all('productsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $value->tid, 'cache', TRUE);
+							
+							//Erzeuge $productsincategory
+							//Count the amount of contained offers
+							$query = new EntityFieldQuery;
+							$productsincategory = $query
+								->entityCondition('entity_type', 'node')
+								->propertyCondition('soldout', 0)
+								->propertyCondition('status', 1)
+								->fieldCondition('field_category', 'tid', $value->tid)
+								->execute();
+							$deliverydates = array();
+							foreach($productsincategory['node'] as $picnid=>$picvalue) {
+								$deliverydates = regiomino_shipping_get_available_pickupdates($picnid, $_SESSION['geolocation_data']['type']);
+								if(!isset($deliverydates) || empty($deliverydates)) {
+									unset($productsincategory['node'][$picnid]);
+								}
+							}
+							
+							cache_set('productsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $value->tid, $productsincategory);
+						}
+						$numRows = 0;
+						
+						if(isset($productsincategory['node']) && !empty($productsincategory['node']))	$numRows = count($productsincategory['node']);
+						//Only proceed if there's at least one contained offer
+						if($numRows > 0) {
+							//Add parent item to array
+							$activepath = FALSE;
+							$arg_1 = arg(1);
+							if($arg_1 == $value->name) $activepath = TRUE;
+							$rm_menu_tree[$value->tid] = array(
+								'active' => $activepath,
+								'link' => url('angebote/' . $value->name),
+								'title' => $value->name,
+							);
+															
+							$children = taxonomy_get_children($value->tid, $vid);
+
+							//Only proceed if children items were found
+							if(isset($children) && !empty($children)) {
+								//Iterate through all children items to build li elements
+								foreach($children as $ckey => $cvalue) {
+									
+									$cached = cache_get('cproductsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $cvalue->tid);
+									if($cached && $cached->created > $cacheexpire) {
+										$cproductsincategory = $cached->data;
+									}
+									else {
+										cache_clear_all('cproductsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $cvalue->tid, 'cache', TRUE);
+										
+										//Check if current child item actually contains published and non-soldout offers
+										$query = new EntityFieldQuery;
+										$cproductsincategory = $query
+											->entityCondition('entity_type', 'node')
+											->propertyCondition('soldout', 0)
+											->propertyCondition('status', 1)
+											->fieldCondition('field_category', 'tid', $cvalue->tid)
+											->execute();
+										$deliverydates = array();
+										foreach($cproductsincategory['node'] as $cpicnid=>$cpicvalue) {
+											$deliverydates = regiomino_shipping_get_available_pickupdates($cpicnid, $_SESSION['geolocation_data']['type']);
+											if(!isset($deliverydates) || empty($deliverydates)) {
+												unset($cproductsincategory['node'][$cpicnid]);
+											}
+										}
+										
+										cache_set('cproductsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $cvalue->tid, $cproductsincategory);
+									}
+									
+									//Count the amount of contained offers
+									$cnumRows = 0;
+									if(isset($cproductsincategory['node']) && !empty($cproductsincategory['node']))	$cnumRows = count($cproductsincategory['node']);
+									//Only proceed if there's at least one contained offer
+									if($cnumRows > 0) {
+										$rm_menu_tree[$value->tid]['children'][$cvalue->tid] = array(
+											'link' => url('angebote/' . $value->name . '/' . $cvalue->name),
+											'title' => $cvalue->name,
+										);
+									}
+								}
+							}
+						}
+					}
+				}
+				$block['content'] = theme('regiomino_menu_theme_menu', array(
+														'vars' => array(
+															'menutree' => $rm_menu_tree,
+														),
+													));
+			}
+			return $block;
+			
+		// case 'regiomino_menu_footer_block':
+			// $block['subject'] = t('Information');
+			// if(user_access('access content')){
+				// $rm_menu_tree = menu_tree('menu-footer');
+				// $block['content'] = theme('regiomino_menu_theme_footer_menu', array(
+															// 'vars' => array(
+																// 'menutree' => $rm_menu_tree,
+															// ),
+														// ));
+			// }
+			// return $block;
+			
+		// case 'regiomino_menu_social_block':
+			// $block['subject'] = t('Social Media');
+			// if(user_access('access content')){
+				// $rm_menu_tree = menu_tree('menu-social-menu');
+				// $block['content'] = theme('regiomino_menu_theme_social_menu', array(
+															// 'vars' => array(
+																// 'menutree' => $rm_menu_tree,
+															// ),
+														// ));
+			// }
+			// return $block;
+			
+		// case 'regiomino_menu_contact_block':
+			// $block['subject'] = t('Contact');
+			// if(user_access('access content')){
+				// $contactform = module_invoke('webform', 'block_view', 'client-block-6540');
+				// $block['content'] = theme('regiomino_menu_theme_contact_form', array(
+															// 'vars' => array(
+																// 'contactform' => $contactform,
+															// ),
+														// ));
+			// }
+			// return $block;
+	}
+}
+
+/**
+ * Implements hook_module_implements_alter().
+ */
+function regiomino_menu_module_implements_alter(&$implementations, $hook) {
+  if ($hook == 'library_alter' && module_exists('jquery_update')) {
+    // Move jquery update to the end. This will make sure our hook_library_alter
+    // is always called before the jquery_update.
+    $jquery_update = $implementations['jquery_update'];
+    unset($implementations['jquery_update']);
+    $implementations['jquery_update'] = $jquery_update;
+  }
+}
+/**
+ * Implements hook_library_alter().
+ */
+function regiomino_menu_library_alter(&$libraries, $module) {
+  // If it is an admin path all we want to do is change the global $conf
+  // variable so when jquery_update runs right after us it will use 1.5.
+  if (strpos(current_path(), 'admin/structure') === 0) {
+    // Modifying global $conf variable, can be dangerous. Be carefull.
+    global $conf;
+    $conf['jquery_update_jquery_version'] = '1.5';
+  }
+}

@@ -1,0 +1,1 @@
+theme this in themefolder/templates/regiomino_subscription_form.tpl.php

@@ -1,0 +1,1 @@
+theme this in themefolder/templates/regiomino_admin_manage_offers_create.tpl.php

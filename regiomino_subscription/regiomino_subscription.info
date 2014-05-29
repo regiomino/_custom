@@ -1,0 +1,5 @@
+name = Regiomino Subscription
+description = Regiomino food subscription functionality
+core = 7.x
+package = Regiomino
+files[] = regiomino_subscription.module

@@ -1,0 +1,1 @@
+theme this in themefolder/templates/regiomino_featureslider_theme_highlightslider.tpl.php

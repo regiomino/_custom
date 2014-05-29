@@ -1,0 +1,1 @@
+theme this in themefolder/templates/regiomino_user_theme_participate_block.tpl.php

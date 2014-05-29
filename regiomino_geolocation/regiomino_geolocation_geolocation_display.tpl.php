@@ -1,0 +1,1 @@
+theme this in themefolder/templates/regiomino_geolocation_theme_display.tpl.php

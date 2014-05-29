@@ -1,0 +1,649 @@
+<?php
+
+/**
+ * Implementation of hook_schema().
+ */
+function regiomino_order_schema(){  
+	$schema = array();
+	//Create table {regiomino_order}
+	$schema['regiomino_order'] = array(
+		'description' => 'Stores Regiomino order information.',
+    'fields' => array(
+      'order_id' => array(
+        'description' => 'Primary key: the order ID.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+			'order_process_id' => array(
+        'description' => 'The ID of the order process.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'uid' => array(
+        'description' => 'The {user}.uid of the customer that placed the order.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'uid_s' => array(
+        'description' => 'The {user}.uid of the seller that sold the order.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+			'nid' => array(
+        'description' => 'The {node}.nid of the product that was purchased.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+			'vid' => array(
+        'description' => 'The {node}.nid of the product that was purchased.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'order_status' => array(
+        'description' => 'The {regiomino_status_types}.order_status_id indicating the order status.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+			'product_price' => array(
+        'description' => 'The price per unit of the product.',
+        'type' => 'numeric',
+        'precision' => 16,
+        'scale' => 5,
+        'not null' => TRUE,
+        'default' => 0.0,
+      ),
+      'product_count' => array(
+        'description' => 'The product quantity of the order.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+			'shipping' => array(
+        'description' => 'The shipping agreement ID.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'primary_email' => array(
+        'description' => 'The email address of the customer.',
+        'type' => 'varchar',
+        'length' => 96,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'delivery_first_name' => array(
+        'description' => 'The first name of the person receiving shipment.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'delivery_last_name' => array(
+        'description' => 'The last name of the person receiving shipment.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'delivery_phone' => array(
+        'description' => 'The phone number at the delivery location.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'delivery_company' => array(
+        'description' => 'The company at the delivery location.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'delivery_street1' => array(
+        'description' => 'The street address of the delivery location.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'delivery_street2' => array(
+        'description' => 'The second line of the street address.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'delivery_city' => array(
+        'description' => 'The city of the delivery location.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'delivery_zone' => array(
+        'description' => 'The state/zone/province id of the delivery location.',
+        'type' => 'int',
+        'size' => 'medium',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'delivery_postal_code' => array(
+        'description' => 'The postal code of the delivery location.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'delivery_country' => array(
+        'description' => 'The country ID of the delivery location.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'billing_first_name' => array(
+        'description' => 'The first name of the person paying for the order.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'billing_last_name' => array(
+        'description' => 'The last name of the person paying for the order.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'billing_phone' => array(
+        'description' => 'The phone number for the billing address.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'billing_company' => array(
+        'description' => 'The company of the billing address.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'billing_street1' => array(
+        'description' => 'The street address where the bill will be sent.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'billing_street2' => array(
+        'description' => 'The second line of the street address.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'billing_city' => array(
+        'description' => 'The city where the bill will be sent.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'billing_zone' => array(
+        'description' => 'The state/zone/province ID where the bill will be sent.',
+        'type' => 'int',
+        'size' => 'medium',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'billing_postal_code' => array(
+        'description' => 'The postal code where the bill will be sent.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'billing_country' => array(
+        'description' => 'The country ID where the bill will be sent.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'seller_phone' => array(
+        'description' => 'The phone number of the seller.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'seller_company' => array(
+        'description' => 'The company at the seller location.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'seller_street1' => array(
+        'description' => 'The street address of the seller location.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'seller_street2' => array(
+        'description' => 'The second line of the street address.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'seller_city' => array(
+        'description' => 'The city of the seller location.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'seller_zone' => array(
+        'description' => 'The state/zone/province id of the seller location.',
+        'type' => 'int',
+        'size' => 'medium',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'seller_postal_code' => array(
+        'description' => 'The postal code of the seller location.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'seller_country' => array(
+        'description' => 'The country ID of the seller location.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'data' => array(
+        'description' => 'A serialized array of extra data.',
+        'type' => 'text',
+        'serialize' => TRUE,
+      ),
+			'created' => array(
+        'description' => 'The timestamp indicating when the order was created.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+			'modified' => array(
+        'description' => 'The timestamp indicating when the order was last modified.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'host' => array(
+        'description' => 'Host IP address of the person paying for the order.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+			'session' => array(
+        'description' => 'Session ID of the person in checkout.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'invoice' => array(
+        'description' => 'The nid of the invoice for the order item.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+      ),
+    ),
+    'indexes' => array(
+      'uid' => array('uid'),
+      'order_status' => array('order_status'),
+    ),
+    'primary key' => array('order_id'),
+    'foreign keys' => array(
+      'uid' => array('users' => 'uid'),
+      'uid_s' => array('users' => 'uid'),
+      'order_status' => array('regiomino_status_types' => 'order_status_id'),
+			'shipping' => array('regiomino_order_shipping' => 'shipping_id'),
+    ),	
+	);
+	//Create table {regiomino_payment_types}
+	$schema['regiomino_payment_types'] = array(
+		'description' => 'Payment methods the user can choose',
+		'fields' => array(
+			'payment_id' => array(
+				'description' => 'The method of payment.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+			),
+			'title' => array(
+        'description' => 'The payment title.',
+        'type' => 'varchar',
+        'length' => 48,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+		),
+		'primary key' => array('payment_id'),
+	);
+	//Create table {regiomino_order_shipping}
+	$schema['regiomino_order_shipping'] = array(
+    'description' => 'Shipping agreements for order entries',
+    'fields' => array(
+			'shipping_id' => array(
+        'description' => 'Primary key: the shipping ID.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+			'shipping_type' => array(
+        'description' => 'The shipping type ID.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+			'shipping_option' => array(
+        'description' => 'deprecated field...',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+			'pickup_range_from' => array(
+        'description' => 'The selected pickup range from',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+			'pickup_range_to' => array(
+        'description' => 'The selected pickup range to',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+			'shipping_range_from' => array(
+        'description' => 'The selected shipping range from',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+			'shipping_range_to' => array(
+        'description' => 'The selected shipping range to',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'uid_p' => array(
+        'description' => 'The {user}.uid of the user responsible for picking up.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'uid' => array(
+        'description' => 'The {user}.uid of the user responsible for shipping.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'fci_p' => array(
+        'description' => 'The {field_collection_item}.item_id of the shipper responsible for picking up.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'fci' => array(
+        'description' => 'The {field_collection_item}.item_id of the shipper responsible for shipping.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'shipping_price' => array(
+        'description' => 'The amount to be paid for shipping.',
+        'type' => 'numeric',
+        'precision' => 16,
+        'scale' => 5,
+        'not null' => TRUE,
+        'default' => 0.0,
+      ),
+      'invoice' => array(
+        'description' => 'The nid of the invoice for the shipping service.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+      ),
+      'invoice_sale' => array(
+        'description' => 'The nid of the invoice for the shipping service (sale).',
+        'type' => 'int',
+        'unsigned' => TRUE,
+      ),
+    ),
+    'primary key' => array('shipping_id'),
+    'foreign keys' => array(
+      'uid' => array('users' => 'uid'),
+			'shipping_type' => array('regiomino_shipping_types' => 'shipping_type_id'),
+			'fci' => array('field_collection_item' => 'item_id'),
+		),
+  );
+	//Create table {regiomino_order_payment}
+	$schema['regiomino_order_payment'] = array(
+    'description' => 'Payment agreements for order entries',
+    'fields' => array(
+			'payment_id' => array(
+        'description' => 'Primary key: the payment ID.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+			'payment_type' => array(
+        'description' => 'The payment type ID.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+			'transaction_fee' => array(
+        'description' => 'The transaction fee for this order.',
+        'type' => 'numeric',
+        'precision' => 16,
+        'scale' => 5,
+        'not null' => TRUE,
+        'default' => 0.0,
+      ),
+      'invoice' => array(
+        'description' => 'The nid of the invoice for the transaction fee.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+      ),
+    ),
+    'primary key' => array('payment_id'),
+    'foreign keys' => array(
+			'payment_type' => array('regiomino_payment_types' => 'payment_id'),
+		),
+  );
+	//Create table {regiomino_status_types}
+	$schema['regiomino_status_types'] = array(
+    'description' => 'Statuses the order can have during its lifecycle.',
+    'fields' => array(
+      'order_status_id' => array(
+        'description' => 'Primary key: the order status ID.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'title' => array(
+        'description' => 'The status title.',
+        'type' => 'varchar',
+        'length' => 48,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+    ),
+    'primary key' => array('order_status_id'),
+  );
+	//Create table {regiomino_order_log}
+	$schema['regiomino_order_log'] = array(
+    'description' => 'Record of changes made to an order.',
+    'fields' => array(
+      'order_log_id' => array(
+        'description' => 'Primary key: the log entry ID.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'order_id' => array(
+        'description' => 'The {regiomino_orders}.order_id.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'uid' => array(
+        'description' => 'The {users}.uid of the user who made the changes.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'changes' => array(
+        'description' => 'The description of what was changed.',
+        'type' => 'text',
+      ),
+			'created' => array(
+        'description' => 'The timestamp indicating when the change was made.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+    ),
+    'indexes' => array(
+      'order_id' => array('order_id'),
+    ),
+    'primary key' => array('order_log_id'),
+    'foreign keys' => array(
+      'order_id' => array('regiomino_orders' => 'order_id'),
+      'uid' => array('users' => 'uid'),
+    ),
+  );
+  return $schema;
+}
+
+/**
+ * Implementation of hook_install().
+ */
+function regiomino_order_install() {
+	//Fill in initial data for {regiomino_status_types}
+  $query = db_insert('regiomino_status_types')
+    ->fields(array(
+      'order_status_id',
+      'title',
+    ));
+  $values = array(
+    array(
+      'order_status_id' => 'canceled',
+      'title' => 'Canceled',
+    ),
+    array(
+      'order_status_id' => 'pending',
+      'title' => 'Pending',
+    ),
+    array(
+      'order_status_id' => 'completed',
+      'title' => 'Completed',
+    ),
+    array(
+      'order_status_id' => 'processing',
+      'title' => 'Processing',
+    ),
+    array(
+      'order_status_id' => 'delivered',
+      'title' => 'Delivered',
+    ),
+    array(
+      'order_status_id' => 'billed',
+      'title' => 'Billed',
+    ),
+  );
+  foreach ($values as $record) {
+    $query->values($record);
+  }
+  $query->execute();
+	//Fill in initial data for {regiomino_payment_types}
+	$query = db_insert('regiomino_payment_types')
+    ->fields(array(
+      'payment_id',
+      'title',
+    ));
+  $values = array(
+    array(
+      'payment_id' => 'paypal',
+      'title' => 'PayPal',
+    ),
+		array(
+      'payment_id' => 'debit',
+      'title' => 'Debit',
+    ),
+		array(
+      'payment_id' => 'creditcard',
+      'title' => 'Credit card',
+    ),
+		array(
+      'payment_id' => 'clicknbuy',
+      'title' => 'ClickandBuy',
+    ),
+		array(
+      'payment_id' => 'prepaid',
+      'title' => 'Prepaid',
+    ),
+  );
+  foreach ($values as $record) {
+    $query->values($record);
+  }
+	$query->execute();
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function regiomino_order_uninstall() {
+}

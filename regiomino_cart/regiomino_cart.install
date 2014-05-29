@@ -1,0 +1,141 @@
+<?php
+
+/**
+ * Implementation of hook_schema().
+ */
+function regiomino_cart_schema(){  
+
+	$schema = array();
+
+  $schema['regiomino_cart'] = array(
+    'description' => 'Stores products placed in shopping carts.',
+    'fields' => array(
+      'cart_item_id' => array(
+        'description' => 'Unique identifier for cart item.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE
+      ),
+      'cart_id' => array(
+        'description' => 'A user-specific cart ID. For authenticated users, their {users}.uid. For anonymous users, a token.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '0',
+      ),
+			'nid' => array(
+        'description' => 'The {node}.nid of the product.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+			'vid' => array(
+        'description' => 'The {node}.vid of the product.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'qty' => array(
+        'description' => 'The number of this product in the cart.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+			'shipping_type' => array(
+        'description' => 'The shipping type ID.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => 'default',
+      ),
+			'shipping_option' => array(
+        'description' => 'The selected option for the shipping type.',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => 'default',
+      ),
+      'changed' => array(
+        'description' => 'The Unix timestamp indicating the time the product in the cart was changed.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'data' => array(
+        'description' => 'A serialized array of extra cart data for the product.',
+        'type' => 'text',
+        'serialize' => TRUE,
+      ),
+    ),
+    'indexes' => array(
+      'cart_id' => array('cart_id'),
+    ),
+    'primary key' => array('cart_item_id'),
+    'foreign keys' => array(
+      'nid' => array('node' => 'nid'),
+			'shipping_type' => array('regiomino_shipping_types' => 'shipping_type_id'),
+    ),
+  );
+	
+		
+	$schema['regiomino_shipping_types'] = array(
+    'description' => 'Types of shipping',
+    'fields' => array(
+      'shipping_type_id' => array(
+        'description' => 'Primary key: the shipping type ID.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'title' => array(
+        'description' => 'The shipping type title.',
+        'type' => 'varchar',
+        'length' => 48,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+    ),
+    'primary key' => array('shipping_type_id'),
+  );
+
+  return $schema;
+}
+
+function regiomino_cart_install() {
+  $t = get_t();
+
+	//Fill order statuses
+  $query = db_insert('regiomino_shipping_types')
+    ->fields(array(
+      'shipping_type_id',
+      'title',
+    ));
+
+  $values = array(
+    array(
+      'shipping_type_id' => 'pickup',
+      'title' => 'Pickup',
+    ),
+		array(
+      'shipping_type_id' => 'bringlivery',
+      'title' => 'Bringlivery',
+    ),
+		array(
+      'shipping_type_id' => 'centralpickup',
+      'title' => 'Central Pickup',
+    ),
+  );
+
+  foreach ($values as $record) {
+    $query->values($record);
+  }
+  $query->execute();
+
+}
+
+function regiomino_cart_uninstall() {
+}

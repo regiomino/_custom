@@ -1,0 +1,1171 @@
+<?php
+
+/**
+ * Implementation of hook_menu().
+ */
+function regiomino_offer_menu() {
+	$items = array();
+  $items['admin/config/regiomino/offer'] = array(
+    'title' => 'Regiomino offer settings',
+    'description' => 'Make settings for regiomino offer types.',
+    'page callback' => 'drupal_get_form', // function called when path is requested
+    'page arguments' => array('regiomino_offer_admin_settings'), // form id passed to the function
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'regiomino_offer.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_offer'),
+  );
+	$items['offer/%/reducestock'] = array(
+    'page callback' => 'regiomino_offer_stockreduce',
+    'page arguments' => array(1),
+    'title' => t('Reduce stock of published offer'),
+		'access arguments' => array('access content'),
+  );
+  $items['user/%user/csvproducts'] = array(
+    'title' => 'CSV Seller',
+    'page callback' => 'regiomino_offer_get_csvproducts',
+    'page arguments' => array(1),
+    'access callback' => 'regiomino_offer_csvproducts_access',
+    'access arguments' => array(1),
+  );
+	 $items['convertpricetotu'] = array(
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('regiomino_offer_convert_price2tu'),
+    'access arguments' => array('administer site configuration'),
+  );
+  return $items;
+}
+
+function regiomino_offer_csvproducts_access($account) {
+	global $user;
+	if($user->uid == 1) return TRUE;
+	if($user->uid != $account->uid) return FALSE; 
+	return in_array('Verkäufer', $account->roles) ? TRUE : FALSE;
+}
+
+function regiomino_offer_get_csvproducts($account, $return = FALSE) {
+	$query = new EntityFieldQuery;
+	$nodeqry = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('offer'))
+		->propertyCondition('uid', $account->uid)
+		->execute();
+	$nodeobjects = entity_load('node', array_keys($nodeqry['node']));
+
+	$csvoutput = array();
+	
+	foreach($nodeobjects as $key => $value) {
+	
+		$query = new EntityFieldQuery;
+		$salesqry = $query
+			->entityCondition('entity_type', 'regiomino_order')
+			->propertyCondition('nid', $value->nid)
+			->execute();
+		$salesobjects = entity_load('regiomino_order', array_keys($salesqry['regiomino_order']));
+		$soldunits = 0;
+		foreach($salesobjects as $saleskey=>$salesvalue) {
+			$soldunits += $salesvalue->product_count;
+		}
+		if($soldunits > 0) $csvoutput[] = array($value->nid, $value->title, date('Y-m-d', strtotime($value->field_duration[LANGUAGE_NONE][0]['value'])), rtrim(rtrim(number_format($value->field_packingunit[LANGUAGE_NONE][0]['first'], 2, ",", "."), '0'), ',') . ' ' . t(strip_tags($value->field_packingunit[LANGUAGE_NONE][0]['second'])), $soldunits);
+	}
+	
+	if($return) {
+		return regiomino_offer_array_to_csv_download($csvoutput, 'ProdukteCSV_' . date('Y-m-d-H-i') . '.csv', ";", $return);
+	}
+	else {
+		regiomino_offer_array_to_csv_download($csvoutput, 'ProdukteCSV_' . date('Y-m-d-H-i') . '.csv', ";", $return);
+		return NULL;
+	}
+}
+
+function regiomino_offer_array_to_csv_download($array, $filename = "export.csv", $delimiter=";", $return = FALSE) {
+	if($return) {
+		$time = time();
+		$filepath = 'private://' . $time . '.csv';
+		$f = fopen($filepath, 'w');
+		foreach ($array as $line) {
+			fputcsv($f, $line, $delimiter);
+		}
+		fclose($f);
+		return $filepath;
+	}
+	else {
+		header('Content-Type: application/csv');
+		header('Content-Disposition: attachement; filename="'.$filename.'";');
+		$f = fopen('php://output', 'w');
+		foreach ($array as $line) {
+			fputcsv($f, $line, $delimiter);
+		}
+	}
+} 
+
+function regiomino_offer_stockreduce($nid) {
+	$nodeobject = node_load($nid);
+	global $user;
+	if($user->uid == $nodeobject->uid || $user->uid == 1) {
+		$output = drupal_get_form('regiomino_offer_stockreduce_form');
+		return $output;
+	}
+	else {
+		drupal_not_found();
+	}
+}
+
+function regiomino_offer_stockreduce_form($form, &$form_state) {
+	//Load node object
+	$nid = arg(1);
+	$nodeobject = node_load($nid);
+	//Get originally entered quantity of product
+	$originalqty = $nodeobject->field_stock['und'][0]['value'];
+	//Find out how many items have been purchased already
+	$query = db_select('regiomino_order', 'ro')->condition('nid', $nid);
+	$query->addExpression('SUM(product_count)');
+	$result = $query->execute()->fetchField();
+	if(!$result) {
+		$soldqty = 0;
+	}
+	else {
+		$soldqty = (int)$result;
+	}
+	$selectarray = array();
+	for($i=$soldqty; $i<=$originalqty; $i++) {
+		$selectarray[$i] = $i;
+	}
+	
+	$form['stockreduce']['nodeid'] = array(
+		'#type' => 'value',
+		'#value' => $nid,
+	);
+		
+	$form['stockreduce']['quantity'] = array(
+		'#type' => 'select',
+		'#title' => t('Adjust stock'),
+		'#options' => $selectarray,
+		'#description' => t('Choose the correct value according to the instructions above'),
+		'#required' => TRUE,
+	);
+
+	$form['stockreduce']['quantity']['#prefix'] = '<div class="messages warning">' . t('You are trying to change the stock of offer #@number "@title".', array('@number' => $nid, '@title' => $nodeobject->title)) . ' ' . t('For valid reasons, the stock of this product can be reduced. Please carefully read the following instructions, before making a change.') . '</div>';
+	
+	$form['stockreduce']['quantity']['#prefix'] .= '<h2>' . t('Instructions') . '</h2><p>' . t('The lowest available quantity is equal to the amount you have already sold <strong>(i.e. if you have already sold 5 items, the lowest available number will be 5)</strong>. This number includes all sold items, regardless whether they have already been delivered or not <strong>(i.e. if you have sold 5 items and now you only have 3 items left in your storage for other customers to buy, please adjust your stock to 8)</strong>. If you choose the lowest available quantity, the product will be marked as sold out. <em>Please consider this when making your change.</em>') . '</p>';
+	
+	$form['stockreduce']['reason'] = array(
+		'#type' => 'textarea',
+		'#title' => t('Reason'),
+		'#description' => t('Please enter a reason why you need to change the stock of this product'),
+		'#required' => TRUE,
+	);
+	
+	$form['stockreduce']['reason']['#prefix'] = '<h2>' . t('Please give us a reason') . '</h2><p>' . t('Changing the stock of an already published product can cause frustration for the customer. Regiomino is based on the marketing efforts of every single customer. It is possible that a customer only purchased a product because he or she believes he can convince enough people to join in the purchase in order to reach a discount level. If you reduce the stock, you might take this opportunity away from him or her. Nonetheless it is better to reduce your stock before purchases are made that you cannot deliver. Please quickly justify your decision.') . '</p>';
+	
+	$form['stockreduce']['submit'] = array(
+		'#type' => 'submit',
+		'#value' => t('Adjust stock'),
+	);
+	
+	return $form;
+}
+
+function regiomino_offer_stockreduce_form_validate($form, &$form_state) {
+	$qty = $form_state['values']['quantity'];
+	$nid = $form_state['values']['nodeid'];
+	//Find out how many items have been purchased already
+	$query = db_select('regiomino_order', 'ro')->condition('nid', $nid);
+	$query->addExpression('SUM(product_count)');
+	$result = $query->execute()->fetchField();
+	if(!$result) {
+		$soldqty = 0;
+	}
+	else {
+		$soldqty = (int)$result;
+	}
+	if($soldqty > $qty) {
+		form_set_error('quantity', t('Unfortunately while you were making your change more units of your product have been sold. You cannot set your stock lower than @amount anymore. Please adjust your number accordingly', array('@amount' => $soldqty)));
+	}
+}
+
+function regiomino_offer_stockreduce_form_submit($form, &$form_state) {
+	$qty = $form_state['values']['quantity'];
+	$reason = $form_state['values']['reason'];
+	$nid = $form_state['values']['nodeid'];	
+	$versionchange = t('Stock adjusted by seller to @newstock for the following reason: @reason', array('@newstock' => $qty, '@reason' => $reason));
+	$nodeobject = node_load($nid);
+	$nodeobject->revision = 1;
+	$nodeobject->log = $versionchange;
+	$nodeobject->field_stock['und'][0]['value'] = $qty;
+	//Find out how many items have been purchased already
+	$query = db_select('regiomino_order', 'ro')->condition('nid', $nid);
+	$query->addExpression('SUM(product_count)');
+	$result = $query->execute()->fetchField();
+	if(!$result) {
+		$soldqty = 0;
+	}
+	else {
+		$soldqty = (int)$result;
+	}
+	if($soldqty == $qty) {
+		$nodeobject->soldout = 1;
+	}
+	$discountarray = $nodeobject->field_discount['und'];
+	foreach($discountarray as $key=>$value) {
+		if($value['second'] > $qty) unset($nodeobject->field_discount['und'][$key]);
+	}	
+	node_save($nodeobject);
+	
+	drupal_set_message(t('Thank you, your change has been saved'));
+	drupal_goto('node/' . $nid);
+}
+
+/**
+* Implementation of hook_node_access().
+*
+* Make sure published nodes can't be edited anymore
+*/
+function regiomino_offer_node_access($node, $op, $account) {
+  if (
+    // The $node argument can be either a $node object or a machine name of
+    // node's content type. It is called multiple times during a page load
+    // so it is enough if you perform the check once you get the object.
+    is_object($node) && $node->type == 'offer' &&
+    // Operation on which you want to act: "create", "delete", "update", "view".
+    ($op == 'delete')
+  ) {
+    // Check if the node is published.
+    if ($node->status == 1) {
+      return NODE_ACCESS_DENY;
+    }
+  }
+	
+	if (
+    // The $node argument can be either a $node object or a machine name of
+    // node's content type. It is called multiple times during a page load
+    // so it is enough if you perform the check once you get the object.
+    is_object($node) && $node->type == 'offer' &&
+    // Operation on which you want to act: "create", "delete", "update", "view".
+    ($op == 'update' || $op == 'delete')
+  ) {
+    // Check if the node is published.
+    if ($node->soldout == 1) {
+      return NODE_ACCESS_DENY;
+    }
+  }
+}
+
+
+
+
+/**
+* Implements hook_form_alter().
+*/
+function regiomino_offer_form_alter(&$form, &$form_state, $form_id) {
+	if(isset($form_state['node']) && $form_state['node']->status == "1") {
+		global $user;
+		if($user->uid > 1) {
+			$form['field_stock']['#disabled'] = TRUE;
+			$form['field_price']['#disabled'] = TRUE;
+			$form['field_salestax']['#disabled'] = TRUE;
+			$form['field_discount']['#disabled'] = TRUE;
+			$form['field_packingunit']['#disabled'] = TRUE;
+			$form['field_duration']['#disabled'] = TRUE;
+			$form['field_commercialgrossprice']['#disabled'] = TRUE;
+			//$form['field_duration']['und']['#after_build'][] = 'regiomino_offer_after_build_element_readonly';
+		}
+	}
+}
+
+function regiomino_offer_after_build_element_readonly($element, &$form_state) {
+
+	$element[0]['value']['day']['#attributes']['readonly'] = 'readonly';
+	$element[0]['value']['month']['#attributes']['readonly'] = 'readonly';
+	$element[0]['value']['year']['#attributes']['readonly'] = 'readonly';
+	
+	return $element;
+}
+
+
+function regiomino_offer_get_baseprice($nodeobject) {
+	$baseprice = '';
+	//Get unit
+	$unit = regiomino_offer_get_unit($nodeobject);
+	//Get discounted price
+	$discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
+	
+	$base_price = array();
+	switch($unit['second']) {
+		case 'pc':
+		case 'bd':
+			$doit = FALSE;
+			break;
+		case 'ml':
+		case 'g':
+			$doit = TRUE;
+			$amount = 100;
+			break;
+		case 'kg':
+		case 'l':
+			$doit = TRUE;
+			$amount = 1;
+			break;
+	}
+	if($doit) {
+		$base_price['price'] = $discountedprice * $amount / $unit['first'];
+		$base_price['amount'] = $amount;
+		$base_price['unit'] = $unit['second'];
+		$baseprice = t('Base price: @amount @unit = @price €', array('@amount' => $base_price['amount'], '@unit' => $base_price['unit'], '@price' => number_format($base_price['price'], 2, ',', '.')));
+	}
+	return $baseprice;
+}
+
+//Helper function for calculating realtime discount levels for given products or arrays of products
+function regiomino_offer_get_discounts($nodeinfo) {
+	$fcis = entity_load('field_collection_item', array_values($nodeinfo->field_tradingunits[LANGUAGE_NONE]));
+	//Sort without key preservation to ensure that the smalles unit has key 0
+	foreach($fcis as $key=>$value) {
+		if($value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != 'private') unset($fcis[$key]);
+	}
+	if(isset($fcis) && !empty($fcis)) {
+		usort($fcis, "regiomino_offer_sort_tradingunits");
+		$discounts = array();
+		$originalprice = $fcis[0]->field_tu_price[LANGUAGE_NONE][0]['value'];
+		if(isset($fcis[1])) {
+			for($i=1; $i<count($fcis); $i++) {
+				$originalpricemulti = $originalprice * $fcis[$i]->field_tu_size[LANGUAGE_NONE][0]['value'];
+				$difference = $originalpricemulti - $fcis[$i]->field_tu_price[LANGUAGE_NONE][0]['value'];
+				$percentage = 100 * $difference / $originalpricemulti;
+				$discounts[] = array(
+					'first' => $percentage,
+					'second' => $fcis[$i]->field_tu_size[LANGUAGE_NONE][0]['value'],
+				);
+			}
+		}
+	}
+	return $discounts;
+}
+
+function regiomino_offer_get_discountinfo($nodeobject, $withcart=TRUE) {
+	$discountinfo = array();
+	$discountinfo['next']['percentage'] = 0;
+	$discountinfo['next']['amount'] = 0;
+	$discountinfo['current']['percentage'] = 0;
+	$discountinfo['current']['amount'] = 0;
+	
+	$soldunits = regiomino_offer_get_soldunits($nodeobject, $withcart);
+	$discounts = regiomino_offer_get_discounts($nodeobject);
+	
+	//Discount Array absteigend sortieren
+	if(is_array($discounts)) usort($discounts, "regiomino_offer_sort_discountarray");
+
+	//Aktuellen Discount-Stand finden
+	if(isset($discounts) && !empty($discounts)) {
+		foreach($discounts as $key => $value) {		
+			if($soldunits >= $value['second']) {
+				$discountinfo['current']['percentage'] = $value['first'];
+				$discountinfo['current']['amount'] = $value['second'];
+				break;
+			}
+			$discountinfo['next']['percentage'] = $value['first'];
+			$discountinfo['next']['amount'] = $value['second'];
+		}
+	}
+	
+	return $discountinfo;
+}
+
+function regiomino_offer_get_unit($nodeobject, $formatted=FALSE) {
+	$items = field_get_items('node', $nodeobject, variable_get('regiomino_offer_unit', 'field_packingunit'));
+	//$items[0]['first'] = floatval(str_replace(',', '.', $items[0]['first']));
+	
+	$markup = field_view_value('node', $nodeobject, variable_get('regiomino_offer_unit', 'field_packingunit'), $items[0]);
+	if($formatted) {
+
+		return rtrim(rtrim(number_format(floatval(rtrim($markup['#item']['first'], ':&nbsp')), 2, ",", "."), '0'), ',') . ' ' . $markup['#item']['second'];
+	} else {
+		return $items[0];
+	}
+}
+
+function regiomino_offer_get_duration($nodeobject, $formatted=FALSE) {
+	$items = field_get_items('node', $nodeobject, variable_get('regiomino_offer_duration', 'field_duration'));
+	if($formatted) {
+		$durationmarkup = field_view_value('node', $nodeobject, variable_get('regiomino_offer_duration', 'field_duration'), $items[0]);
+		$duration = $durationmarkup['#markup'];
+		return $duration;
+	} else {
+		return $items[0]['value'];
+	}
+}
+
+function regiomino_offer_sort_tradingunits($a, $b) {
+	if ($a->field_tu_size[LANGUAGE_NONE][0]['value'] == $b->field_tu_size[LANGUAGE_NONE][0]['value']) {
+			return 0;
+	}
+	return ($a->field_tu_size[LANGUAGE_NONE][0]['value'] < $b->field_tu_size[LANGUAGE_NONE][0]['value']) ? -1 : 1;
+}
+
+function regiomino_offer_sort_tradingunits_desc($a, $b) {
+	if ($a->field_tu_size[LANGUAGE_NONE][0]['value'] == $b->field_tu_size[LANGUAGE_NONE][0]['value']) {
+			return 0;
+	}
+	return ($a->field_tu_size[LANGUAGE_NONE][0]['value'] > $b->field_tu_size[LANGUAGE_NONE][0]['value']) ? -1 : 1;
+}
+
+function regiomino_offer_get_originalprice($nodeinfo, $formatted=FALSE, $notaltered=FALSE) {
+
+	$fcis = entity_load('field_collection_item', array_values($nodeinfo->field_tradingunits[LANGUAGE_NONE]));
+	
+	//Sort without key preservation to ensure that the smalles unit has key 0
+	usort($fcis, "regiomino_offer_sort_tradingunits");
+	
+	$firsttradingunit = $fcis[0];
+	
+	if($formatted) return number_format($firsttradingunit->field_tu_gross[LANGUAGE_NONE][0]['value'], 2, ",", ".") . " €";
+	
+	return $firsttradingunit->field_tu_gross[LANGUAGE_NONE][0]['value'];
+
+/* 	$items = field_get_items('node', $nodeinfo, variable_get('regiomino_offer_price', 'field_price'));
+
+	if($formatted) {
+		if(!$notaltered) {
+			$items[0]['value'] = ceil($items[0]['value'] * 1.1 * 2 * pow(10, 1))/pow(10, 1)/2;
+		}
+		$pricemarkup = field_view_value('node', $nodeinfo, variable_get('regiomino_offer_price', 'field_price'), $items[0]);
+		$price = str_replace('.', ',' , $pricemarkup['#markup']);
+		return $price;
+	}
+	else {
+		if(!$notaltered) {
+			$items[0]['value'] = ceil($items[0]['value'] * 1.1 * 2 * pow(10, 1))/pow(10, 1)/2;
+		}
+		return $items[0]['value'];
+	} */
+}
+
+function regiomino_offer_get_originalstock($nodeobject, $formatted=FALSE) {
+	$items = field_get_items('node', $nodeobject, variable_get('regiomino_offer_stock', 'field_stock'));
+	if($formatted) {
+		$stockmarkup = field_view_value('node', $nodeobject, variable_get('regiomino_offer_stock', 'field_stock'), $items[0]);
+		$stock = $stockmarkup['#markup'];
+		return $stock;
+	} else {
+		return $items[0]['value'];
+	}
+}
+
+function regiomino_offer_get_currentstock($nodeobject, $withcart = TRUE) {
+	$stock = regiomino_offer_get_originalstock($nodeobject);
+	$soldunits = regiomino_offer_get_soldunits($nodeobject, $withcart);
+	return $stock-$soldunits;
+}
+
+function regiomino_offer_get_soldunits($nodeinfo, $withcart = TRUE) {
+	$amount = 0;
+
+	$nid = (int)$nodeinfo->nid;
+
+/* 	//Verkaufte Einheiten auslesen
+	$result = db_select('regiomino_order', 'bo')
+	->fields('bo', array('product_count'))
+	->condition('nid', $nid)
+	->condition('order_status', 'canceled', '!=')
+	->condition('order_status', 'pending', '!=')
+	->execute();
+	
+	while($record = $result->fetchAssoc()) {
+		$amount += (int)$record['product_count'];
+	} */
+	
+	if($withcart) {
+		//Einheiten im Warenkorb des Users auslesen
+		$qty = regiomino_cart_get_amount($nid);
+		$amount += $qty;
+	}
+
+	return $amount;
+}
+/**
+ * regiomino_offer_get_tradingunit_moneyvalue($vars['node'], TRUE, TRUE, 'private', 1, 'field_tu_gross');
+ */
+function regiomino_offer_get_tradingunit_moneyvalue($nodeinfo, $formatted=FALSE, $withcart=TRUE, $tax='private', $amount=1, $field='field_tu_gross') {
+
+	$returnval = &drupal_static(__FUNCTION__, array());
+
+	if(!isset($returnval[$nodeinfo->nid][$formatted][$withcart][$tax][$amount][$field])) {
+
+		$tuvalue = NULL;
+		//Load all tradingunits stored in the node
+		$fcis = entity_load('field_collection_item', array_values($nodeinfo->field_tradingunits[LANGUAGE_NONE]));
+		
+		//Filter out prices that do not belong to the customertype (private or commercial)
+		foreach($fcis as $key=>$value) {
+			if($value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != $tax) unset($fcis[$key]);
+		}
+		//If prices are left, continue here. Otherwise NULL is returned
+		if(isset($fcis) && !empty($fcis)) {
+
+			//Sort DESC by tradingunit size without key preservation
+			usort($fcis, "regiomino_offer_sort_tradingunits_desc");
+			//Find out which tradingunit size matches the given amount (mod = 0)
+			foreach($fcis as $key=>$value) {
+				if($amount % $value->field_tu_size[LANGUAGE_NONE][0]['value']) {
+					//tradingunit doesn't fit
+				}
+				else {
+					//tradingunit fits
+					$tuamount = $amount / $value->field_tu_size[LANGUAGE_NONE][0]['value'];
+					$tuvalue = $tuamount * $value->{$field}[LANGUAGE_NONE][0]['value'];
+					break;
+				}
+			}
+		}
+		if($formatted && !is_null($tuvalue)) {
+			$tuvalue = number_format($tuvalue, 2, ",", ".") . " €";
+		}
+		$returnval[$nodeinfo->nid][$formatted][$withcart][$tax][$amount][$field] = $tuvalue;
+	}
+	return $returnval[$nodeinfo->nid][$formatted][$withcart][$tax][$amount][$field];
+}
+
+function regiomino_offer_get_discountedprice($nodeinfo, $formatted=FALSE, $withcart=TRUE, $notaltered=FALSE) {
+
+	$returnval = &drupal_static(__FUNCTION__, array());
+
+	if(!isset($returnval[$nodeinfo->nid][$formatted][$withcart][$notaltered])) {
+		//If a nodeobject is passed in as parameter nodeinfo, then use this to determine price
+
+		$orgprice = regiomino_offer_get_originalprice($nodeinfo, FALSE, $notaltered);
+
+		$discountinfo = regiomino_offer_get_discountinfo($nodeinfo, $withcart);
+
+		$orgprice -= $orgprice*$discountinfo['current']['percentage']/100;
+		if($formatted) {
+			$orgprice = number_format($orgprice, 2, ",", ".") . " " . variable_get('regiomino_currency', '€');
+		}
+		$returnval[$nodeinfo->nid][$formatted][$withcart][$notaltered] = $orgprice;
+		
+	}
+	
+	return $returnval[$nodeinfo->nid][$formatted][$withcart][$notaltered];
+	
+}
+
+function regiomino_offer_sort_discountarray($a, $b) {
+	if ($a['second'] == $b['second']) {
+			return 0;
+	}
+	return ($a['second'] > $b['second']) ? -1 : 1;
+}
+
+function regiomino_offer_get_product_images($nodeobject) {
+	$items = field_get_items('node', $nodeobject, variable_get('regiomino_offer_image', 'field_image'));
+	$picturearray = array();
+	$notfirst = FALSE;
+	$style_name = 'medium';
+	foreach($items as $key=>$value) {
+		if($notfirst) $style_name = 'thumbnail_cart';
+		$notfirst = TRUE;
+		$productimage = array(
+			'style_name' => $style_name,
+			'path' => $value['uri'],
+			'width' => '',
+			'height' => '',
+			'alt' => $value['alt'],
+			'title' => $value['title'],
+			'attributes' => array('class' => 'productimage'),
+		);
+		$picturearray[] = theme('image_style',$productimage);
+	}
+	return $picturearray;
+}
+
+/**
+ * Implements hook_views_pre_view().
+ */
+function regiomino_offer_views_pre_view(&$view) {	
+	if ($view->name == 'anbieterdistanz' OR $view->name == 'offers') {
+		$user_latlon = regiomino_geolocation_get_user_latlon();
+
+		$user_lat = $user_latlon['lat'];
+		$user_lon = $user_latlon['lon'];
+		
+		//insert latitude and longitude into views source of origin point for displaying distance (in km)
+		$view_field_geofield = $view->display_handler->get_option('fields');
+		$view_field_geofield['field_geofield_distance']['source_lat'] = $user_lat;
+		$view_field_geofield['field_geofield_distance']['source_lon'] = $user_lon;
+		$view->display_handler->set_option('fields', $view_field_geofield);
+		
+		if($view->name == 'offers') {
+			$view_field_geofield = $view->display_handler->get_option('sorts');
+			$view_field_geofield['field_geofield_distance']['source_lat'] = $user_lat;
+			$view_field_geofield['field_geofield_distance']['source_lon'] = $user_lon;
+			$view->display_handler->set_option('sorts', $view_field_geofield);
+		}
+	}
+}
+
+
+function regiomino_offer_node_validate($node, $form, &$form_state) {
+	$offertype = variable_get('regiomino_offer_node_type', 'offer');
+	if($node->type == $offertype) {
+		$stock = regiomino_offer_get_originalstock($node);
+		$discounts = regiomino_offer_get_discounts($node);
+		usort($discounts, "regiomino_offer_sort_discountarray");
+		$previouskey = 100;
+		foreach($discounts as $key=>$value) {
+			if(is_numeric($value['second'])) {
+				//Check that discount levels arent larger than stock
+				if($value['second'] > $stock) form_set_error('field_discount', t('Please make sure your discount levels are not larger than your stock.'));
+				//Check that every new discount level is larger than the previous one
+				if($value['first'] > $previouskey) form_set_error('field_discount', t('Please check your discount values. Every new discount level needs to be higher than the previous one.'));
+				$previouskey = $value['first'];
+			}
+		}
+	}
+}
+
+/* function regiomino_offer_entity_presave($entity, $type) {
+	$offertype = variable_get('regiomino_offer_node_type', 'offer');
+	if($entity->type == $offertype) {
+		$stock = regiomino_offer_get_originalstock($entity);
+		$discounts = regiomino_offer_get_discounts($entity);
+		usort($discounts, "regiomino_offer_sort_discountarray");
+		$previouskey = 100;
+		foreach($discounts as $key=>$value) {
+			$sizeofdiscounts = count($entity->field_discount[LANGUAGE_NONE]);
+			if(is_numeric($value['second'])) {
+				//Check that discount levels arent larger than stock
+				if($value['second'] > $stock) {
+					if($sizeofdiscounts > 1) {
+						unset($entity->field_discount[LANGUAGE_NONE][$key]);
+					}
+					else {
+						$entity->field_discount[LANGUAGE_NONE][$key]['second'] = $stock;
+					}
+				}
+				//Check that every new discount level is larger than the previous one
+				if($value['first'] > $previouskey) print_r('This wont work');
+				$previouskey = $value['first'];
+			}
+		}
+	}
+} */
+
+function regiomino_offer_availability($nodeobject, $amount, $withcart = FALSE) {
+	//Retrieve currently available stock
+	$stock = regiomino_offer_get_currentstock($nodeobject, $withcart);	
+	$unit = regiomino_offer_get_unit($nodeobject, TRUE);
+	//Fill an array with the available stock options
+	$stock_array = array();
+	// for($i=0; $i<=$stock; $i++) {
+		// $stock_array[$i] = $i;
+	// }
+	
+		
+	//Load tradingunits
+	$fcis = entity_load('field_collection_item', array_values($nodeobject->field_tradingunits[LANGUAGE_NONE]));
+	
+	//Sort without key preservation to ensure that the smalles unit has key 0
+	usort($fcis, "regiomino_offer_sort_tradingunits");
+	
+	$tradingunits = array();
+
+	foreach($fcis as $key=>$fcivalue) {
+		$number = $fcivalue->field_tu_size[LANGUAGE_NONE][0]['value'];
+		if(isset($fcis[$key+1]->field_tu_size[LANGUAGE_NONE][0]['value']) && !empty($fcis[$key+1]->field_tu_size[LANGUAGE_NONE][0]['value'])) {
+			while($number < $fcis[$key+1]->field_tu_size[LANGUAGE_NONE][0]['value']) {
+				$stock_array[$number] = $number . " x " . $unit;
+				$number += $fcivalue->field_tu_size[LANGUAGE_NONE][0]['value'];
+			}
+		}
+		else {
+			while($number <= $stock) {
+				$stock_array[$number] = $number . " x " . $unit;
+				$number += $fcivalue->field_tu_size[LANGUAGE_NONE][0]['value'];
+			}
+		}
+	}
+	
+	//Check if product is marked as sold out and fill in the values for the return array accordingly
+	if($nodeobject->soldout) {
+		//Set availability to 0 -> unavailable
+		$available = 0;
+		//Force the prefilled array of available stock options to 0. Necessary if stock has not been bought out or reduced to 0, but product was marked as sold out
+		$stock_array = array();
+		$stock_array[0] = 0;
+		//Set status message
+		$message = t("Unfortunately the product <strong>@product</strong> has been marked as sold out.", array('@product' => $nodeobject->title));
+	}
+	//Check if user has put the maximum available quantity in his cart already
+	elseif($stock == 0) {
+		//Set availability to 0 -> unavailable
+		$available = 0;
+		//Force the prefilled array of available stock options to 0. Necessary if stock has not been bought out or reduced to 0, but product was marked as sold out
+		$stock_array = array();
+		$stock_array[0] = 0;
+		//Set status message
+		$message = t("You have already put the maximum available quantity of <strong>@product</strong> in your cart.", array('@product' => $nodeobject->title));
+	}
+	//Check if available quantity is smaller than the given amount parameter and fill in the values for the return array accordingly
+	elseif($amount > $stock) {
+		//Set availability to 1 -> available but reduced
+		$available = 1;
+		//Set status message
+		$message = t("Unfortunately the amount you selected for <strong>@product</strong> is not available anymore.", array('@product' => $nodeobject->title));
+	}
+	//In all other cases the product is fully available
+	else {
+		//Set availability to 2 -> available
+		$available = 2;
+		//Set status message
+		$message = t('The product <strong>@product</strong> is available in the selected quantity.', array('@product' => $nodeobject->title));
+	}
+	
+	//Initialize return object with generated values.
+	$availability = (object)array(
+		'available' => $available,
+		'message' => $message,
+		'stock' => $stock_array,
+	);
+	
+	return $availability;
+}
+
+function regiomino_offer_clone_node_alter(&$node, $context) {
+  if ($context['original_node']->type = 'offer') {
+    $node->soldout = '0';
+		$node->title = str_replace(t('Clone of') . " ", "", $node->title);
+		global $user;
+		drupal_set_message(t('Your offer was duplicated and can now be edited in the view <a href="@url">"Unpublished"</a>.', array('@url' => '/user/' . $user->uid . '/myoffers/unpublished')));
+  }
+}
+
+function regiomino_offer_check_expiration($nodeobject, $timestamp) {
+	
+	$expired = FALSE;
+	$items = field_get_items('node', $nodeobject, variable_get('regiomino_offer_duration', 'field_duration'));
+	$expiration = strtotime($items[0]['value']);
+	if($timestamp > $expiration) {
+		$expired = TRUE;
+	}
+	return $expired;
+}
+
+function regiomino_offer_convert_price2tu($form, &$form_state) {	
+  $form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => t('Start conversion'),
+	);
+  return $form;
+}
+
+function regiomino_offer_convert_price2tu_submit() {
+	$query = new EntityFieldQuery;
+	$tmp = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('offer'))
+		->propertyCondition('soldout', 1)
+		->execute();
+		
+	$alloffers = array_keys($tmp['node']);
+	batch_set(regiomino_offer_convert_price2tu_build_batch($alloffers));	
+}
+
+function regiomino_offer_convert_price2tu_build_batch($order_ids) {
+
+  $operations = array();
+  foreach($order_ids as $key=>$order_id) {
+    $operations[] = array(
+      'regiomino_offer_convert_price2tu_op', array($order_id),
+    );
+  }
+  $batch = array(
+    'operations' => $operations,
+    'finished' => 'regiomino_offer_convert_price2tu_finished',
+  );
+  return $batch;
+}
+
+function regiomino_offer_convert_price2tu_op($order_id, &$context) {
+	//Set shipping assignment with order_id to delivered
+	$offer_item = node_load($order_id);
+	
+	// if(isset($offer_item->field_tradingunits[LANGUAGE_NONE]) && !empty($offer_item->field_tradingunits[LANGUAGE_NONE])) {
+		// unset($offer_item->field_tradingunits[LANGUAGE_NONE]);
+		// node_save($offer_item);
+	// }
+	if(!isset($offer_item->field_tradingunits[LANGUAGE_NONE][0]['value']) || empty($offer_item->field_tradingunits[LANGUAGE_NONE][0]['value'])) {
+		if(isset($offer_item->field_price[LANGUAGE_NONE][0]['value']) && !empty($offer_item->field_price[LANGUAGE_NONE][0]['value'])) {
+			$offersalestax = $offer_item->field_salestax[LANGUAGE_NONE][0]['value'];
+			$grossprice = $offer_item->field_price[LANGUAGE_NONE][0]['value'];
+			$finalgrossprice = ceil($grossprice * 1.1 * 2 * pow(10, 1))/pow(10, 1)/2;
+			$finalgrosspriceminusvat = $finalgrossprice / (1 + $offersalestax / 100);
+			$rev = $finalgrosspriceminusvat / 1.2;
+			regiomino_offer_add_tradingunit($offer_item, 1, $rev);
+		}
+		else {
+			$offer_item->soldout = 1;
+			node_save($offer_item);
+		}
+		if(isset($offer_item->field_discount[LANGUAGE_NONE]) && !empty($offer_item->field_discount[LANGUAGE_NONE])) {
+			foreach($offer_item->field_discount[LANGUAGE_NONE] as $discountvalue) {
+				$qty = (int)$discountvalue['second'];
+				$discperc = $discountvalue['first'];
+				$turev = round(($rev * $qty) * (100 - $discperc) / 100, 5);
+				regiomino_offer_add_tradingunit($offer_item, $qty, $turev);
+			}
+		}
+	}
+}
+
+
+function regiomino_offer_convert_price2tu_finished($success, $results, $operations) {
+  drupal_set_message(t('The selected offers have been converted'), 'status');
+}
+
+
+/**
+* Implementation of hook_cron().
+*/
+function regiomino_offer_cron() {
+	$view = views_get_view("all_live_but_expired_offers");	
+	$view->execute();
+	$result = $view->result;
+	$counter = 0;
+	$noarray = array();
+	foreach($result as $key=>$value) {
+		$newnid = 0;
+		$oldnid = 0;
+		$nodeobject = node_load($value->nid);
+		$noarray[] = $nodeobject;
+		$duplicatenode = clone $nodeobject;
+		if($duplicatenode->field_renewal['und'][0]['value'] != '0' && !empty($duplicatenode->field_renewal['und'][0]['value'])) {
+			$duplicatenode->nid = NULL;
+			$duplicatenode->vid = NULL;
+			$duplicatenode->tnid = NULL;
+			$duplicatenode->status = 1;
+			$enddate = strtotime($duplicatenode->field_duration['und'][0]['value']);
+			$newdate = strtotime('+' . $duplicatenode->field_renewal['und'][0]['value'] . ' weeks', $enddate);
+			$duplicatenode->field_duration['und'][0]['value'] = date('Y-m-d\TH:i:s', $newdate);
+			node_save($duplicatenode);
+			//Use new nid for updating flag lists and generating emails etc
+			$newnid = $duplicatenode->nid;
+			$oldnid = $nodeobject->nid;
+			watchdog('offer', 'The offer @offertitle with nid @nid has been automatically renewed for @amount week(s) with new nid @nnid', array('@offertitle' => $duplicatenode->title, '@nid' => $oldnid, '@amount' => $duplicatenode->field_renewal['und'][0]['value'], '@nnid' => $newnid));
+			drupal_set_message(t('The offer @offertitle with nid @nid has been automatically renewed for @amount week(s) with new nid @nnid', array('@offertitle' => $duplicatenode->title, '@nid' => $oldnid, '@amount' => $duplicatenode->field_renewal['und'][0]['value'], '@nnid' => $newnid)), 'status');
+		}
+		
+		$nodeobject->soldout = 1;		
+		node_save($nodeobject);
+		
+		if($newnid && $oldnid) {
+			regiomino_offer_update_history($oldnid, $newnid);
+			regiomino_offer_remove_from_index($oldnid);
+			regiomino_offer_add_to_index($duplicatenode);
+			regiomino_offer_update_subscriptions($oldnid, $newnid);
+		}
+		else {
+			regiomino_offer_remove_from_index($oldnid);
+			regiomino_offer_remove_from_subscriptions($oldnid);
+		}
+		
+		$counter++;
+	}
+	
+	if($counter > 0) watchdog('offer', '@amount offers have expired and have been set to sold out', array('@amount' => $counter));
+}
+
+function regiomino_offer_remove_from_subscriptions($nid) {
+	$query = new EntityFieldQuery();
+	$subqry = $query
+		->entityCondition('entity_type', 'field_collection_item')
+		->entityCondition('bundle', 'field_subscription_items')
+		->fieldCondition('field_offer', 'target_id', (string) $nid)
+		->execute();
+	if(isset($subqry) && !empty($subqry)) {
+		$alltoremove = array_keys($subqry['field_collection_item']);
+		foreach($alltoremove as $key=>$subscription_item_id) {
+			regiomino_subscription_remove_product($subscription_item_id, '', 'status', '', FALSE);
+		}
+		watchdog('subscription', 'Subscriptions have been removed due to missing automatic renewal: @all', array('@all' => print_r($alltoremove, TRUE)));
+	}
+}
+
+function regiomino_offer_update_subscriptions($oldnid, $newnid) {
+	$query = new EntityFieldQuery();
+	$subqry = $query
+		->entityCondition('entity_type', 'field_collection_item')
+		->entityCondition('bundle', 'field_subscription_items')
+		->fieldCondition('field_offer', 'target_id', (string) $oldnid)
+		->execute();
+	if(isset($subqry) && !empty($subqry)) {
+		$alltoupdate = array_keys($subqry['field_collection_item']);
+		foreach($alltoupdate as $key=>$subscription_item_id) {
+			regiomino_subscription_update_subscription($subscription_item_id, array('offer' => $newnid));
+		}
+		watchdog('subscription', 'Subscriptions have been updated due to automatic renewal: @all', array('@all' => print_r($alltoupdate, TRUE)));
+	}
+}
+
+function regiomino_offer_update_history($ancestor, $descendant) {
+	$exists = db_query('SELECT hid FROM {regiomino_offer_clonehistory} WHERE ancestor = :ancestor AND descendant = :descendant', array(':ancestor' => $ancestor, ':descendant' => $descendant))->rowCount();
+	if(!$exists) {
+		$sql = db_query('INSERT INTO {regiomino_offer_clonehistory} (ancestor, descendant, changed) VALUES (:ancestor, :descendant, :time)', array(':ancestor' => $ancestor, ':descendant' => $descendant, ':time' => time()));
+		
+		$ancestorobject = node_load($ancestor);
+		$ancestorobject->field_descendant[LANGUAGE_NONE][0]['target_id'] = $descendant;
+		node_save($ancestorobject);
+		
+		$descendantobject = node_load($descendant);
+		$descendantobject->field_ancestor[LANGUAGE_NONE][0]['target_id'] = $ancestor;
+		node_save($descendantobject);
+		
+		drupal_set_message('query performed', 'status');
+	}
+	
+	watchdog('updatehistory', '@ancestor has been renewed to @descendant', array('@ancestor' => $ancestor, '@descendant' => $descendant));
+}
+
+function regiomino_offer_remove_from_index($nid) {
+	$full_index_url = variable_get('search_index_url', 'http://188.40.37.206');
+	$full_index_url .= ':';
+	$full_index_url .= variable_get('search_index_port', '9690');
+	$full_index_url .= variable_get('search_index_path', '/json/index.ov49fxokylmbbrbxmcozlmapga3pct');
+	$data = array(
+		'method' => 'delete',
+		'param0' => json_encode($nid),
+	);
+	$result = drupal_http_request(url($full_index_url, array('query' => $data)));
+	watchdog('searchindex', 'Node @nid was deleted from the index: @result', array('@nid' => $nid, '@result' => print_r($result, TRUE)));
+}
+
+function regiomino_offer_add_to_index($nodeobject) {
+	$full_index_url = variable_get('search_index_url', 'http://188.40.37.206');
+	$full_index_url .= ':';
+	$full_index_url .= variable_get('search_index_port', '9690');
+	$full_index_url .= variable_get('search_index_path', '/json/index.ov49fxokylmbbrbxmcozlmapga3pct');
+	
+	$nodeobjects = array();
+	$nodeobjects[$nodeobject->nid] = $nodeobject;
+	
+	$size = count($nodeobjects);
+	$fields = array();
+	foreach($nodeobjects as $nid => $values) {
+		$allcategories = array();
+		foreach($values->field_category[LANGUAGE_NONE] as $catval) {
+			$allcategories[] = $catval['tid'];
+		}
+
+		$sellerprofile = node_load(user_load($values->uid)->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+		$sellerprofile_nid = $sellerprofile->nid;
+		$sellerprofile_title = $sellerprofile->title;
+		$sellerprofile_locality = $sellerprofile->field_address[LANGUAGE_NONE][0]['locality'];
+		$labelarray = array();
+		if(isset($values->field_labels[LANGUAGE_NONE])) {
+			foreach($values->field_labels[LANGUAGE_NONE] as $value) {
+				$labelnode = node_load($value['target_id']);
+				$labelarray[] = array(
+					'target_id' => $value['target_id'],
+					'image_uri' => $labelnode->field_image[LANGUAGE_NONE][0]['uri'],
+					'title' => $labelnode->title,
+				);
+			}
+		}
+		$fields[] = array(
+			'id' => $nid,
+			'fields' => array(
+				'title' => array($values->title),
+				'body' => array($values->body[LANGUAGE_NONE][0]['value']),
+				'created' => array($values->created),
+				'soldout' => array($values->soldout),
+				'status' => array($values->status),
+				'image' => array($values->field_image[LANGUAGE_NONE][0]['uri']),
+				'pickupdelay' => array($values->field_pickupdelay[LANGUAGE_NONE][0]['value']),
+				'duration' => array($values->field_duration[LANGUAGE_NONE][0]['value']),
+				'origin_locality' => array($values->field_origin[LANGUAGE_NONE][0]['locality']),
+				'origin_country' => array($values->field_origin[LANGUAGE_NONE][0]['country']),
+				'origin_lat' => array($values->field_origin_geoloc[LANGUAGE_NONE][0]['lat']),
+				'origin_lon' => array($values->field_origin_geoloc[LANGUAGE_NONE][0]['lon']),
+				'packingunit_first' => array($values->field_packingunit[LANGUAGE_NONE][0]['first']),
+				'packingunit_second' => array($values->field_packingunit[LANGUAGE_NONE][0]['second']),
+				'sellerprofile_nid' => array($sellerprofile_nid),
+				'sellerprofile_title' => array($sellerprofile_title),
+				'sellerprofile_locality' => array($sellerprofile_locality),
+				'labels' => array(json_encode($labelarray)),
+				'_kategorie' => $allcategories,
+				'_author' => array($values->uid),
+				'_type' => array($values->type),
+			),
+		);
+	}
+	$data = array(
+			'method' => 'index',
+			'param0' => json_encode($fields),
+	);
+	$full_url = url($full_index_url, array('query' => $data));
+	$result = drupal_http_request($full_url);
+	//Ergebnis-Daten finden sich jetzt in $result->data
+	watchdog('searchindex', '@amount nodes have been indexed: @result', array('@amount' => $size, '@result' => print_r($result, TRUE)));
+}
+
+function regiomino_offer_most_sales_effective_products($timerange = 2419200, $pickerfci = NULL, $offset = 0, $limit = 0, $cachingtime = 3600, $forcefillup = 0, $state = array(1)) {
+	//Wenn kein spezieller Abholer übergeben wurde, wird der aus der aktuellen Session übernommen
+	if(empty($pickerfci)) {
+		$tmp = explode('-', $_SESSION['geolocation_data']['deliveryoption']);
+		$pickerfci = $tmp[7];
+	}
+	//Zeit definieren, ab der gesucht werden soll
+	$time = time();
+	$earliest = $time - $timerange;
+
+	$cacheexpire = $time - $cachingtime;
+	$cached = cache_get('highlights_de_' . $pickerfci . '_' . $timerange . '_' . $forcefillup . '_' . $limit . '_' . $offset);
+	if($cached && $cached->created > $cacheexpire) {
+		$mostpopular = $cached->data;
+	}
+	else {
+		cache_clear_all('highlights_de_' . $pickerfci . '_' . $timerange . '_' . $forcefillup . '_' . $limit . '_' . $offset, 'cache', TRUE);
+
+		//Alle Lieferaufträge raussuchen, die später als die definierte Zeit ausgeführt wurden
+		$query = new EntityFieldQuery;
+		$shippingqry = $query
+			->entityCondition('entity_type', 'regiomino_order_shipping')
+			->propertyCondition('fci_p', $pickerfci)
+			->propertyCondition('pickup_range_from', $earliest, '>')
+			->execute();
+		$shipping_ids = array_keys($shippingqry['regiomino_order_shipping']);
+
+		//Alle zu den Lieferaufträgen zugehörigern Bestellungen raussuchen
+		$query = new EntityFieldQuery;
+		$orderqry = $query
+			->entityCondition('entity_type', 'regiomino_order')
+			->propertyCondition('shipping', $shipping_ids)
+			->execute();
+		$orders = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+		
+		//Ein Array füllen, dass für jede NID den Umsatz aufsummiert
+		$mostpopular = array();
+		foreach($orders as $orderid=>$orderobject) {
+			$mostpopular[$orderobject->nid]['node'] = node_load($orderobject->nid);
+			if(!isset($mostpopular[$orderobject->nid]['cash']) || empty($mostpopular[$orderobject->nid]['cash'])) {
+				$mostpopular[$orderobject->nid]['cash'] = regiomino_offer_get_tradingunit_moneyvalue($mostpopular[$orderobject->nid]['node'], FALSE, FALSE, 'private', $orderobject->product_count, 'field_tu_gross');
+			}
+			else {
+				$mostpopular[$orderobject->nid]['cash'] += regiomino_offer_get_tradingunit_moneyvalue($mostpopular[$orderobject->nid]['node'], FALSE, FALSE, 'private', $orderobject->product_count, 'field_tu_gross');
+			}
+		}
+	
+		//Da manche Angebote Nachfahren von anderen sein können, müssen auch diese zusammengehörenden Angebote zusammenaddiert werden
+		ksort($mostpopular);
+		foreach($mostpopular as $nid=>$values) {
+			if(!empty($values['node']->field_descendant)) {
+				$hit = FALSE;
+				foreach($mostpopular as $comp_nid=>$comp_values) {
+					if($values['node']->field_descendant[LANGUAGE_NONE][0]['target_id'] == $comp_nid) {
+						$mostpopular[$comp_nid]['cash'] += $values['cash'];
+						unset($mostpopular[$nid]);
+						$hit = TRUE;
+					}
+				}
+				if(!$hit) {
+					$mostpopular[$values['node']->field_descendant[LANGUAGE_NONE][0]['target_id']]['node'] = node_load($values['node']->field_descendant[LANGUAGE_NONE][0]['target_id']);
+					$mostpopular[$values['node']->field_descendant[LANGUAGE_NONE][0]['target_id']]['cash'] = $values['cash'];
+					unset($mostpopular[$nid]);
+				}
+			}
+		}
+		
+		if(count($state) == 1 && $state[0] == 1) {
+			//Alle Angebote herausfiltern, die nicht mehr aktiv sind
+			foreach($mostpopular as $nid=>$values) {
+				if(isset($tmp[3])) {
+					$pickupday = strtotime(date('d.m.Y', $tmp[3]));
+				}
+				else {
+					$pickupday = strtotime('next friday');
+				}
+				$deadline = $pickupday - ($values['node']->field_pickupdelay[LANGUAGE_NONE][0]['value'] * 3600);
+
+				if($values['node']->soldout == 1 || $time > $deadline) {
+					unset($mostpopular[$nid]);
+				}
+			}
+		}
+		else if(count($state) == 1 && $state[0] == 0) {
+			//Alle Angebote herausfiltern, die aktiv sind
+			foreach($mostpopular as $nid=>$values) {
+				if($values['node']->soldout == 0) {
+					unset($mostpopular[$nid]);
+				}
+			}
+		}
+		
+		//Ergebnisse absteigend sortieren
+		uasort($mostpopular, "regiomino_offer_sort_most_popular_products");
+
+	
+		//Wenn ein Offset oder Limit definiert wurde, soll das Array gekürzt werden
+		if($limit) {
+			$mostpopular = array_slice($mostpopular, $offset, $limit, TRUE);
+		}
+		
+		$mostpopularcount = count($mostpopular);
+		if($forcefillup && $mostpopularcount < $limit) {
+			$forbiddenkeys = array_keys($mostpopular);
+			$difference = $limit - $mostpopularcount;
+			$query = new EntityFieldQuery;
+			$query
+				->entityCondition('entity_type', 'node')
+				->entityCondition('bundle', array('offer'))
+				->propertyCondition('status', 1)
+				->propertyCondition('soldout', 0);
+			if(!empty($forbiddenkeys)) $query->propertyCondition('nid', $forbiddenkeys, 'NOT IN');
+			$nodeqry = $query
+				->propertyOrderBy('created', 'DESC')
+				->range($offset, $difference)
+				->execute();
+			foreach($nodeqry['node'] as $nid=>$values) {
+				$deliverydates = regiomino_shipping_get_available_pickupdates($nid, $_SESSION['geolocation_data']['type']);
+				if(!isset($deliverydates) || empty($deliverydates)) {
+					unset($nodeqry['node'][$cpicnid]);
+				}
+			}
+			$nodeobjects = entity_load('node', array_keys($nodeqry['node']));
+			foreach($nodeobjects as $nid=>$nodeobject) {
+				$mostpopular[$nid]['node'] = $nodeobject;
+				$mostpopular[$nid]['cash'] = 0;
+			}
+		}
+
+		cache_set('highlights_de_' . $pickerfci . '_' . $timerange . '_' . $forcefillup . '_' . $limit . '_' . $offset, $mostpopular);
+	}
+	return $mostpopular;
+}
+
+function regiomino_offer_sort_most_popular_products($a, $b) {
+	if ($a['cash'] == $b['cash']) {
+			return 0;
+	}
+	return ($a['cash'] > $b['cash']) ? -1 : 1;
+}
+
+function regiomino_offer_add_tradingunit($offerobject, $qty = 1, $rev = 1, $customertype = 'private') {
+
+	$shp = $rev * 0.1;
+	$com = $rev * 0.1;
+	$vat = ($rev + $shp + $com) * $offerobject->field_salestax[LANGUAGE_NONE][0]['value'] / 100;
+	$prc = $rev + $shp + $com;
+	$grs = $rev + $shp + $com + $vat;
+	
+	//Add new field collection item to it
+	$field_collection_item = entity_create('field_collection_item', array('field_name' => 'field_tradingunits'));
+	$field_collection_item->setHostEntity('node', $offerobject);		
+	$field_collection_item->field_tu_size[LANGUAGE_NONE][0]['value'] = $qty;
+	$field_collection_item->field_tu_revenue[LANGUAGE_NONE][0]['value'] = $rev;
+	$field_collection_item->field_tu_shipping[LANGUAGE_NONE][0]['value'] = $shp;
+	$field_collection_item->field_tu_commission[LANGUAGE_NONE][0]['value'] = $com;
+	$field_collection_item->field_tu_vat[LANGUAGE_NONE][0]['value'] = $vat;
+	$field_collection_item->field_tu_price[LANGUAGE_NONE][0]['value'] = $prc;
+	$field_collection_item->field_tu_gross[LANGUAGE_NONE][0]['value'] = $grs;
+	$field_collection_item->field_tu_customertype[LANGUAGE_NONE][0]['value'] = $customertype;
+	
+	$field_collection_item->save();
+}

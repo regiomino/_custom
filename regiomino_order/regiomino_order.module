@@ -1,0 +1,2375 @@
+<?php
+
+function regiomino_order_theme() {
+	return array(
+		'regiomino_order_theme_verify' => array(
+			'template' => 'regiomino_order_verify',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+	);
+}
+
+/**
+ * Implements hook_entity_info().
+ *
+ * This informs Drupal about an order being an entity and includes the custom db table
+ */
+function regiomino_order_entity_info() {
+  $return = array(
+    'regiomino_order' => array(
+      'label' => t('Regiomino Order Item'),
+      'entity class' => 'Entity',
+      'controller class' => 'EntityAPIController',
+      'base table' => 'regiomino_order',
+      'fieldable' => TRUE,
+      'entity keys' => array(
+        'id' => 'order_id',
+        'label' => 'order_id',
+      ),
+      'bundles' => array(),
+      'load hook' => 'regiomino_order_load',
+      'view modes' => array(
+        'full' => array(
+          'label' => t('Default'),
+          'custom settings' => FALSE,
+        ),
+      ),
+      'label callback' => 'entity_class_label',
+      'uri callback' => 'entity_class_uri',
+      'module' => 'regiomino_order',
+    ),
+    'regiomino_status_types' => array(
+      'label' => t('Regiomino Status Types'),
+      'entity class' => 'Entity',
+      'controller class' => 'EntityAPIController',
+      'base table' => 'regiomino_status_types',
+      'fieldable' => TRUE,
+      'entity keys' => array(
+        'id' => 'order_status_id',
+        'label' => 'order_status_id',
+      ),
+      'bundles' => array(),
+      'load hook' => 'regiomino_order_load',
+      'view modes' => array(
+        'full' => array(
+          'label' => t('Default'),
+          'custom settings' => FALSE,
+        ),
+      ),
+      'label callback' => 'entity_class_label',
+      'uri callback' => 'entity_class_uri',
+      'module' => 'regiomino_order',
+    ),	
+  );
+  return $return;
+}
+
+/**
+ * Implements hook_entity_property_info_alter().
+ *
+ * This ensures that order entities can be accessed through views and relationships
+ */
+function regiomino_order_entity_property_info_alter(&$info) {
+  $properties = &$info['regiomino_order']['properties'];
+  $properties['uid'] = array(
+    'label' => t("User"),
+    'type' => 'user',
+    'description' => t("The owner of the item."),
+    'required' => TRUE,
+    'schema field' => 'uid',
+  );
+  $properties['uid_s'] = array(
+    'label' => t("User"),
+    'type' => 'user',
+    'description' => t("The seller of the product."),
+    'required' => TRUE,
+    'schema field' => 'uid_s',
+  );
+	$properties['nid'] = array(
+    'label' => t("Angebot"),
+    'type' => 'node',
+    'description' => t("Offer"),
+    'required' => TRUE,
+    'schema field' => 'nid',
+  );
+	$properties['invoice'] = array(
+    'label' => t("Invoice"),
+    'type' => 'node',
+    'description' => t("Invoice"),
+    'required' => TRUE,
+    'schema field' => 'nid',
+  );
+	$properties['shipping'] = array(
+    'label' => t("Shipping"),
+    'type' => 'regiomino_order_shipping',
+    'description' => t("Regiomino Shipping Agreement"),
+    'required' => TRUE,
+    'schema field' => 'shipping',
+  );
+ 	$properties['payment'] = array(
+    'label' => t("Payment"),
+    'type' => 'regiomino_order_payment',
+    'description' => t("Regiomino Payment Agreement"),
+    'required' => TRUE,
+    'schema field' => 'order_process_id',
+  );
+	$properties['order_status'] = array(
+    'label' => t("Order Status"),
+    'type' => 'regiomino_status_types',
+    'description' => t("Regiomino Order Status Types"),
+    'required' => TRUE,
+    'schema field' => 'order_status',
+    /* 'getter callback' => 'entity_metadata_field_verbatim_get',
+    'setter callback' => 'entity_metadata_field_verbatim_set', */
+  );
+	$properties['created'] = array(
+    'label' => t("Created"),
+    'type' => 'date',
+    'description' => t("Created"),
+    'required' => TRUE,
+    'schema field' => 'created',
+  );
+	$properties['modified'] = array(
+    'label' => t("Modified"),
+    'type' => 'date',
+    'description' => t("Modified"),
+    'required' => TRUE,
+    'schema field' => 'modified',
+  );
+}
+
+function regiomino_order_views_pre_render(&$view) {
+  if ($view->name == 'all_orders' || $view->name == 'incoming_orders' || $view->name == 'my_orders' || $view->name == 'dashboard_undelivered_orders' || $view->name == 'all_shipping_assignments') {
+		foreach($view->result as $key=>$value) {
+			if(isset($value->regiomino_shipping_types_regiomino_order_shipping_title)) $value->regiomino_shipping_types_regiomino_order_shipping_title = t($value->regiomino_shipping_types_regiomino_order_shipping_title);
+			if(isset($value->regiomino_payment_types_regiomino_order_payment_title)) $value->regiomino_payment_types_regiomino_order_payment_title = t($value->regiomino_payment_types_regiomino_order_payment_title);
+			if(isset($value->regiomino_status_types_regiomino_order_title)) $value->regiomino_status_types_regiomino_order_title = t($value->regiomino_status_types_regiomino_order_title);
+		}
+	}
+}
+
+/**
+ * Implementation of hook_menu().
+ *
+ * Creates paths and menu items
+ */
+function regiomino_order_menu() {
+	$items = array();
+	$items['checkout/verify'] = array(
+    'title' => t('Confirmation'),
+    'page callback' => 'regiomino_order_checkout',
+    'access arguments' => array('access content'),
+  );
+	//Used for PayPal IPN
+	$items['checkout/confirmation'] = array(
+    'title' => t('Confirmation'),
+    'page callback' => 'regiomino_order_confirm',
+    'access arguments' => array('access content'),
+  );
+	//Used to post and redirect sofortüberweisung payments to provider gateway
+	$items['checkout/provider'] = array(
+    'title' => t('Redirect to the payment provider'),
+    'page callback' => 'regiomino_order_redirectpayment',
+    'access arguments' => array('access content'),
+  );
+	//Used for Novalnet Payment notification
+	$items['checkout/confirmation/ibt'] = array(
+    'title' => t('Confirmation'),
+    'page callback' => 'regiomino_order_novalnet_confirm',
+    'access arguments' => array('access content'),
+  );
+	$items['thankyou'] = array(
+    'title' => t('Thank you!'),
+    'page callback' => 'regiomino_order_thankyou',
+    'access arguments' => array('access content'),
+  );
+/* 	$items['order/%/shipping/done'] = array(
+    'page callback' => 'regiomino_order_shipping_done',
+    'page arguments' => array(1),
+		'access arguments' => array('access content'),
+  ); */
+/* 	$items['order/%/processing/done'] = array(
+    'page callback' => 'regiomino_order_processing_done',
+    'page arguments' => array(1),
+		'access arguments' => array('access content'),
+  ); */
+/* 	$items['admin/config/regiomino/order'] = array(
+    'title' => 'Regiomino order settings',
+    'description' => 'Make settings for regiomino order.',
+    'page callback' => 'drupal_get_form', // function called when path is requested
+    'page arguments' => array('regiomino_order_admin_settings'), // form id passed to the function
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'regiomino_order.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_order'),
+  ); */
+	return $items;
+}
+
+function regiomino_order_redirectpayment() {
+	$urlparam = drupal_get_query_parameters();
+
+	$nn_url = variable_get('regiomino_payment_novalnet_onlinepayport', 'https://payport.novalnet.de/online_transfer_payport');
+	$form = '';
+  if ($urlparam) {
+    $form .= t('Please wait, you are now being redirected automatically. If this does not happen within 2 minutes, please click on the button below to continue!');
+    $form .= "<form action='$nn_url' method='post'>";
+    foreach($urlparam as $k=>$v){
+      $form .= "<input type='hidden' name='$k' value='$v'>";
+    }
+    $form .= "<input type='submit' name='submit2' value='" . t('Perform payment') . "'>";
+    $form .= "</form>";
+    $form .= "<script type='text/javascript'>document.forms[2].submit();</script>";
+		return $form;
+  }
+	else {
+		drupal_not_found();
+	}
+}
+
+/* function regiomino_order_shipping_done($order_id) {
+	global $user;
+	$uid = $user->uid;
+	
+	$query = db_query("SELECT uid FROM {regiomino_order_shipping} WHERE shipping_id = :shipping_id AND uid = :uid", array(':shipping_id' => $order_id, ':uid' => $uid));
+	$results = $query->fetchObject();
+	if(is_object($results)) {
+		//Set status and redirect back to destination
+		db_update('{regiomino_order}')
+		->fields(
+			array(
+				'order_status' => 'delivered',
+			)
+		)
+		->condition('shipping', $order_id)
+		->execute();
+		drupal_set_message(t('All items of order number @number have been set to @status', array('@number' => $order_id, '@status' => 'delivered')));
+		$destination = $_GET['destination'];
+		drupal_goto($destination);
+	}
+	else {
+		//Deny access
+		drupal_access_denied();
+	}
+} */
+
+/* function regiomino_order_processing_done($order_id) {
+	global $user;
+	$uid = $user->uid;
+	
+	$query = db_query("SELECT r.uid, rs.shipping_type FROM {regiomino_order_shipping} rs, {regiomino_order} r, {node} n WHERE rs.shipping_id = :shipping_id AND rs.shipping_id = r.shipping AND r.nid = n.nid AND n.uid = :uid", array(':shipping_id' => $order_id, ':uid' => $uid));
+	
+	$results = $query->fetchObject();
+	if(is_object($results)) {
+		//Check if this is a pickup order
+		if($results->shipping_type == "pickup") {
+			$order_status_type = 'delivered';
+		}
+		else {
+			$order_status_type = 'processing';
+		}
+		//Set status and redirect back to destination
+		db_update('{regiomino_order}')
+		->fields(
+			array(
+				'order_status' => $order_status_type,
+			)
+		)
+		->condition('shipping', $order_id)
+		->execute();
+		drupal_set_message(t('All items of order number @number have been set to @status', array('@number' => $order_id, '@status' => t($order_status_type))));
+		$destination = $_GET['destination'];
+		drupal_goto($destination);
+	}
+	else {
+		//Deny access
+		drupal_access_denied();
+	}
+} */
+
+function regiomino_order_novalnet_confirm() {
+	watchdog('novalnet_ibt', 'path has been triggered: @postdata', array('@postdata' => print_r($_REQUEST, TRUE)));
+	if($_REQUEST['status'] && $_REQUEST['status_message']) {
+		watchdog('novalnet_ibt', 'notification from novalnet received: @postdata', array('@postdata' => print_r($_REQUEST, TRUE)));
+		//if (regiomino_order_novalnet_checkHash($_REQUEST, 'eb1e78328c46506b46a4ac4a1e378b91') == true) {
+		//for some reason request does not contain hash2 as stated in docs
+		if(true) {
+			//daten sind in ordnung
+			watchdog('novalnet_ibt', 'success checkhash');
+			if($_REQUEST['status'] == 100) {
+				//success
+				watchdog('novalnet_ibt', 'success txn');
+				regiomino_order_successfulpayment($_REQUEST['uniqid'], $_REQUEST['amount']/100, 'sofort');
+			}
+			else {
+				//failure
+				watchdog('novalnet_ibt', 'failure txn');
+			}
+		}
+		else {
+			//daten sind mglw manipuliert
+			watchdog('novalnet_ibt', 'failure checkhash');
+			//send alertmail
+		}
+	}
+}
+
+function regiomino_order_confirm() {
+
+	$postdata = serialize($_POST);
+	watchdog('order', 'my confirmation post data: @postdata', array('@postdata' => $postdata));
+	if (isset($_POST["txn_id"]) && isset($_POST["txn_type"])){
+		$req = 'cmd=_notify-validate';
+		
+		// assign posted variables to local variables
+		$data['item_name']			= $_POST['item_name'];
+		$data['item_number'] 		= $_POST['item_number'];
+		$data['payment_status'] 	= $_POST['payment_status'];
+		$data['payment_amount'] 	= $_POST['mc_gross'];
+		$data['payment_currency']	= $_POST['mc_currency'];
+		$data['txn_id']				= $_POST['txn_id'];
+		$data['receiver_email'] 	= $_POST['receiver_email'];
+		$data['payer_email'] 		= $_POST['payer_email'];
+		$data['custom'] 			= $_POST['custom'];
+		$data['invoice'] 			= $_POST['invoice'];
+		
+		foreach ($_POST as $key => $value) {
+			$value = urlencode(stripslashes($value));
+			$value = preg_replace('/(.*[^%^0^D])(%0A)(.*)/i','${1}%0D%0A${3}',$value);// IPN fix
+			$req .= "&$key=$value";
+		}
+
+		/* watchdog('invoice_number', '@ordernumber', array('@ordernumber' => $data['invoice']));
+		watchdog('serialize_invoice_number', '@ordernumber', array('@ordernumber' => serialize($data['invoice']))); */
+		// post back to PayPal system to validate
+		$header = "POST /cgi-bin/webscr HTTP/1.0\r\n";
+		$header .= "Content-Type: application/x-www-form-urlencoded\r\n";
+		$header .= "Content-Length: " . strlen($req) . "\r\n\r\n";
+		
+		$fp = fsockopen ('ssl://www.paypal.com', 443, $errno, $errstr, 30);	
+
+		if (!$fp) {
+			// HTTP ERROR
+		} else {
+			fputs ($fp, $header . $req);
+			while (!feof($fp)) {
+				$res = fgets ($fp, 1024);
+				if (strcmp($res, "VERIFIED") == 0) {
+					// Used for debugging
+					//watchdog('verified_response', 'Verified Response<br />data = <pre>@somestring</pre>', array('@somestring' => serialize($post)));
+					//Validate payment (Check unique txnid & correct price)
+					//$valid_txnid = check_txnid($data['txn_id']);
+					$valid_txnid = TRUE;
+					//$valid_price = check_price($data['payment_amount'], $data['item_number']);
+					$valid_price = TRUE;
+					// PAYMENT VALIDATED & VERIFIED!
+					if($valid_txnid && $valid_price){
+						
+						regiomino_order_successfulpayment($data['custom'], $data['payment_amount'], 'paypal');
+						
+					}else{
+					}
+				}else if (strcmp ($res, "INVALID") == 0) {
+					// PAYMENT INVALID & INVESTIGATE MANUALLY!
+					watchdog('verified_response', 'Invalid Response<br />data = <pre>@somestring</pre>', array('@somestring' => serialize($post)));
+				}
+			}
+			fclose ($fp);
+		}
+	}
+}
+
+function regiomino_order_successfulpayment($order_process_id, $payment_amount = 0, $type) {
+
+	watchdog('order', 'Payment for order @number received', array('@number' => $order_process_id));		
+
+	$equery = new EntityFieldQuery;
+	$paymenttype_ids = $equery
+		->entityCondition('entity_type', 'node')
+		->propertyCondition('type', 'paymenttype')
+		->fieldOrderBy('field_weight', 'value')
+		->execute();
+
+	$payment_types = entity_load('node', array_keys($paymenttype_ids['node']));
+	$payment = array();
+	
+	foreach($payment_types as $key=>$value) {
+		$payment[$value->field_paymentkey[LANGUAGE_NONE][0]['value']] = $value->title;
+	}
+	
+	$query = db_query("SELECT uid, created FROM {regiomino_order} WHERE order_process_id = :process_id AND order_status = :status", array(':process_id' => $order_process_id, ':status' => 'pending'));
+	
+	$emailquery = db_query("
+		SELECT
+			o.nid,
+			o.uid,
+			o.product_count,
+			o.shipping,
+			o.created,
+			o.order_process_id,
+			s.shipping_option,
+			p.field_packingunit_first,
+			p.field_packingunit_second
+		FROM
+			{regiomino_order} o,
+			{regiomino_order_shipping} s,
+			{field_data_field_packingunit} p
+		WHERE
+			o.shipping = s.shipping_id AND
+			order_process_id = :process_id AND
+			order_status = :status AND
+			p.bundle = 'offer' AND
+			o.nid = p.entity_id
+		", array(':process_id' => $order_process_id, ':status' => 'pending'));
+
+	$results = $query->fetchObject();
+	if(is_object($results)) {
+
+		$uid = $results->uid;
+
+		$currentbalance = (float)userpoints_get_current_points($uid, 446);
+		$deduct = ($payment_amount+$currentbalance)*-1;
+
+		//Hier müssen Bestellbestätigungen und Faxe an Verkäufer rausgehen
+		$structuredarray = array();
+		foreach($emailquery as $record) {
+			$offernodeobject = node_load($record->nid);
+			$customerobject = user_load($record->uid);
+			$seller_user = user_load($offernodeobject->uid);
+			$seller_profile = node_load($seller_user->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+			$structuredarray[$record->uid][$record->shipping]['sellerprofile'] = $seller_profile;
+			$structuredarray[$record->uid][$record->shipping]['products'][$record->nid]['offerobject'] = $offernodeobject;
+			$structuredarray[$record->uid][$record->shipping]['products'][$record->nid]['quantity'] = $record->product_count;
+			$structuredarray[$record->uid][$record->shipping]['products'][$record->nid]['amount'] = $record->field_packingunit_first;
+			$structuredarray[$record->uid][$record->shipping]['products'][$record->nid]['unit'] = $record->field_packingunit_second;
+			$structuredarray[$record->uid][$record->shipping]['shipping']['shipping_option'] = explode('-', $record->shipping_option);
+			$structuredarray[$record->uid][$record->shipping]['order_process_id'] = $record->order_process_id;
+			$structuredarray[$record->uid][$record->shipping]['customerprofile'] = $customerobject;
+		}
+
+
+		foreach($structuredarray as $key=>$value) {
+			foreach($value as $key2 => $value2) {
+				//Send one email per loop
+				$params = array();
+				$countthis = 0;
+				foreach($value2['products'] as $key3=>$value3) {
+					$params['products'][$countthis]['title'] = $value3['offerobject']->title;
+					$params['products'][$countthis]['menge'] = $value3['quantity'];
+					$params['products'][$countthis]['einheit_amount'] = $value3['amount'];
+					$params['products'][$countthis]['einheit_unit'] = $value3['unit'];
+					$params['products'][$countthis]['nid'] = $key3;
+					$countthis++;
+				}
+				$params['sellerprofile'] = $value2['sellerprofile'];
+				$params['headers'] = array(
+					//'Bcc' => 'system@regiomino.de',
+				);
+				$params['shipping_option'] = $value2['shipping']['shipping_option'];
+				$params['order_process_id'] = $value2['order_process_id'];
+				$params['customer_info'] = $value2['customerprofile'];
+				$to = $value2['sellerprofile']->field_email[LANGUAGE_NONE][0]['email'];
+				//$to = 'mfrericks@gmail.com';
+				$email_from = variable_get('site_mail', '');
+				$sent = drupal_mail('regiomino_order', 'seller_orderconfirmation', $to, language_default(), $params, $email_from, TRUE);
+				if(isset($value2['sellerprofile']->field_publicfax[LANGUAGE_NONE][0]['number']) && !empty($value2['sellerprofile']->field_publicfax[LANGUAGE_NONE][0]['number'])) {
+					$faxnumber = '0' . ltrim($value2['sellerprofile']->field_publicfax[LANGUAGE_NONE][0]['number'], '0');
+					$to = $faxnumber . '@simple-fax.de';
+					$sent = drupal_mail('regiomino_order', 'seller_orderconfirmation_fax', $to, language_default(), $params, $email_from, TRUE);
+				}
+			}
+		}
+		
+		$warenkorb = regiomino_cart_load_cart($uid);
+		
+		regiomino_subscription_check_cart_for_subscriptions($warenkorb);
+
+		/**
+		 * Bestellbestätigungs-E-Mail an alle Beteiligten verschicken
+		 */
+		$userobject = user_load($uid);
+		//Get user e-mail
+		$to = $userobject->mail;
+		//Get site-wide email address
+		$email_from = variable_get('site_mail', '');
+		//Pass order process id as parameter
+		$params['orderid'] = $order_process_id;
+		//Pass payment type as parameter
+		$params['paymenttype'] = $type;
+	/* 	//Pass payment url as parameter
+		$params['paymentgoto'] = $payment_goto;
+		//Pass payment options as parameter
+		$params['paymentoptions'] = $payment_options;
+		$params['paymentoptions']['absolute'] = TRUE; */
+		//Pass user as parameter
+		$params['userobject'] = $userobject;
+		//Pass user address as parameter
+		$addressitems = field_get_items('user', $userobject, 'field_shippingaddress');
+		$params['addressitems'] = $addressitems;
+		//Pass Cart as parameter
+		$params['warenkorb'] = $warenkorb;
+		//Pass timestamp as parameter
+		$params['created'] = $results->created;
+		//Create a disclaimer for the mail
+		$params['disclaimer'] = t('Confirmation of your order at Regiomino. Please keep this email until your order is completed.');	global $base_url;
+		//Set current balance
+		$params['currentbalance'] = $currentbalance;
+		//Set BCC
+		$params['headers'] = array(
+			'Bcc' => 'system@regiomino.de',
+		);
+		
+		//Send email
+		$sent = drupal_mail('regiomino_order', 'customer_orderconfirmation', $to, language_default(), $params, $email_from, TRUE);
+		
+		//regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display)
+
+		$transactionid = regiomino_user_write_points(
+			$deduct,
+			446,
+			$uid,
+			t('Order process ID') . ' ' . $order_process_id,
+			'order_process_id_' . $order_process_id,
+			'customer',
+			FALSE
+		);
+
+		//regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display)
+		$transactionid = regiomino_user_write_points(
+			$payment_amount,
+			446,
+			$uid,
+			$payment[$type] . ': ' . t('Incoming payment'),
+			'incoming_payment_' . $order_process_id,
+			'customer',
+			FALSE
+		);
+		
+		//Update order table
+		$allorderids = db_query('SELECT order_id FROM {regiomino_order} o WHERE o.order_process_id = :order_process_id', array(':order_process_id' => $order_process_id));
+		foreach($allorderids as $allorderidsrecord) {
+			regiomino_order_change_status($allorderidsrecord->order_id, 'completed');
+		}
+
+		
+		//Empty cart
+		// $query = db_delete('{regiomino_cart}')
+		// ->condition('cart_id', $uid)
+		// ->execute();
+		
+		regiomino_cart_delete_cart($uid);
+	}
+	
+	
+}
+
+/**
+ * Callback function for the menu path /checkout
+ */
+function regiomino_order_checkout() {
+
+	//Make sure checkout is a process of steps, no manual jumps
+	global $base_url;
+	$force_referer[] = 'checkout/payment';
+	$force_referer[] = 'checkout/verify';
+	$referer = str_replace($base_url . '/', "", $_SERVER['HTTP_REFERER']);
+
+	if($referer != $force_referer[0] && $referer != $force_referer[1]) {
+		drupal_set_message(t('Please follow the steps of the checkout process one after another'), 'warning');
+		drupal_goto('checkout/address');
+	}
+
+	global $user;
+	if ($user->uid) {
+		$loggedin = TRUE;
+		$cart_id = $user->uid;
+	}
+	else {
+		$loggedin = FALSE;
+		$cart_id = session_id();
+	}
+	//Load cart
+	$empty = regiomino_cart_empty_cart($cart_id);
+	//Set message if cart is empty
+	if($empty) {
+		drupal_goto('cart');
+	}
+	
+	//Make sure user logs in or registers before continuing to checkout
+	if(!$loggedin) drupal_goto('user', array('query' => drupal_get_destination()));
+	$content = drupal_get_form('regiomino_order_payment_form');
+	return	theme('regiomino_order_theme_verify', array(
+						'vars' => array(
+							'form' => $content,
+						),
+					));
+}
+
+/**
+ * Form that asks the user to enter payment information
+ * and submits this and the cart contents as an order.
+ */
+function regiomino_order_payment_form($form, &$form_state) {
+
+	drupal_set_title('');
+
+
+	global $user;
+	$userobject = user_load($user->uid);
+	$paymentitems = field_get_items('user', $userobject, 'field_payment');
+	//$balanceitems = field_get_items('user', $userobject, 'field_use_balance_for_purchase');
+	//Retrieve payment options and make them selectable through form item
+	$temp = variable_get('regiomino_payment_types', array('prepaid' => 'Prepaid'));
+	
+	$query = new EntityFieldQuery;
+	$paymenttype_ids = $query
+		->entityCondition('entity_type', 'node')
+		->propertyCondition('type', 'paymenttype')
+		->fieldOrderBy('field_weight', 'value')
+		->execute();
+
+	$payment_types = entity_load('node', array_keys($paymenttype_ids['node']));
+	$payment = array();
+	
+	foreach($payment_types as $key=>$value) {
+		$payment[$value->field_paymentkey[LANGUAGE_NONE][0]['value']] = $value->title;
+	}
+	
+	if(!$payment[$paymentitems[0]['value']]) {
+		$paymentstring = t('Balance');
+	}
+	else {
+		$paymentstring = $payment[$paymentitems[0]['value']];
+	}
+	/* $form['bof_checkout']['payment'] = array(
+    '#markup' => '<table class="processinfo"><tr><td><p><strong>' . t('Payment method') . ':</strong><br />' . $paymentstring . '</p></td>',
+	); */
+	
+	//Display summary of order including items and address of orderer.
+	$warenkorb = regiomino_cart_load_cart();
+	$valueaddup = 0;
+	$vataddup = 0;
+	
+	$items = field_get_items('user', $userobject, 'field_shippingaddress');
+	/* $form['bof_checkout']['payment']['#suffix'] = '<td><p><strong>' . t('Delivery address') . ':</strong><br />' . $items[0]['first_name'] . ' ' . $items[0]['last_name'] . '<br />' . $items[0]['thoroughfare'] . '<br />';
+	if($items[0]['premise'] != '') $form['bof_checkout']['payment']['#suffix'] .=	$items[0]['premise'] . '</br>';
+	$form['bof_checkout']['payment']['#suffix'] .= $items[0]['postal_code'] . ' ' . $items[0]['locality'] . '</p></td>';
+	
+	$items = field_get_items('user', $userobject, 'field_billingaddress');
+	$form['bof_checkout']['payment']['#suffix'] .= '<td><p><strong>' . t('Billing address') . ':</strong><br />';
+	if($items[0]['locality']) {
+		$form['bof_checkout']['payment']['#suffix'] .= $items[0]['first_name'] . ' ' . $items[0]['last_name'] . '<br />' . $items[0]['thoroughfare'] . '<br />';
+		if($items[0]['premise'] != '') $form['bof_checkout']['payment']['#suffix'] .=	$items[0]['premise'] . '</br>';
+		$form['bof_checkout']['payment']['#suffix'] .= $items[0]['postal_code'] . ' ' . $items[0]['locality'] . '</p></td></tr></table>';
+	}
+	else {
+		$form['bof_checkout']['payment']['#suffix'] .= t('equal to @deliveryaddress', array('@deliveryaddress' => t('Delivery address'))) . '</p></td></tr></table>';
+	} */
+
+	//Display notice that the only payment option during closed beta phase is prepaid
+/* 	$form['bof_checkout']['payment']['#prefix'] = '<div class="messages status">' . t('Please check the following summary of your order and click @placeorder to place your order. You will then receive an email as confirmation including details on how to perform payment.', array('@placeorder' => t('Place order'))) . '</div>'; */
+	
+	/*$form['bof_checkout']['payment']['#prefix'] = '
+	<table>
+		<tr class="cartheader">
+			<th colspan="2">' . t('Product / shipping') . '</th>
+			<th>' . t('Price') . '</th>';
+			
+			
+			*/
+			
+			
+	if($user->uid == 1 || $user->uid == 8 || $user->uid == 281 || $user->uid == 1254) {
+		/* $form['bof_checkout']['payment']['#prefix'] .= '<th>' . t('Frequency') . '</th>'; */
+		$colspansellername = 6;
+	}
+	else {
+		/* $form['bof_checkout']['payment']['#prefix'] .= '<!--<th>' . t('Frequency') . '</th>-->'; */
+		$colspansellername = 5;
+	}
+	
+	
+	
+	
+/* 	$form['bof_checkout']['payment']['#prefix'] .= '		
+			<th>' . t('Amount') . '</th>
+			<th>' . t('Total') . '</th>
+		</tr>
+	'; */
+	$first = TRUE;
+	$topborder = "";
+	$shipping = 0;
+	foreach($warenkorb as $key=>$value) {
+		if(!$first) $topborder = " topborder";
+		$first = FALSE;
+		//Display seller information as a markup-form-element
+		/* $form['bof_checkout']['payment']['#prefix'] .= '
+			<tr class="virtual' . $topborder . '">
+				<td colspan="' . $colspansellername . '" class="seller">' . t('Sold by') . ' ' . $value['profile']['users_profile_title'] . ' ' . t('in') . ' ' . $value['profile']['ort'] . '</td>
+			</tr>
+		'; */
+		//Retrieve selected shipping type for use in #default_value key of form element
+		foreach($value['product'] as $fkey => $fvalue) {
+			//Since shipping is the same for all items of this current seller, it doesn't matter which one we take.
+			//Just loop through all cart item id's and take the last.
+			$my_cart_item_id = $fkey;
+		}
+		//Retrieve shipping type for cart item id from db and write in variable			
+		$shippingvalue = $value['product'][$my_cart_item_id]['shipping_type'];
+		//Retrieve shipping option for cart item id and write in variable	
+		$shippingoption = $value['product'][$my_cart_item_id]['shipping_option'];
+		//Select chosen delivery options
+		$shippingoptionarray = explode("-", $shippingoption);
+		$engweekday = date('l', $shippingoptionarray[1]);
+		$day = date("d", $shippingoptionarray[1]);
+		$month = t(date("F", $shippingoptionarray[1]));
+		$year = date("Y", $shippingoptionarray[1]);
+		$time1 = date("H:i", $shippingoptionarray[1]);
+		$time2 = date("H:i", $shippingoptionarray[2]);
+		if($shippingvalue == 'bringlivery') {
+			$shipping += $shippingoptionarray[5];
+			$bringliverymenuser = user_load($shippingoptionarray[8]);
+			$bringliverymenprofile = node_load($bringliverymenuser->field_profilereference_shipper['und'][0]['target_id']);
+			$shippingoptionoutput = t('on @weekday, @day. @month @year - @time1 until @time2', array('@weekday' => t($engweekday), '@day' => $day, '@month' => $month, '@year' => $year, '@time1' => $time1, '@time2' => $time2)) . ' ' . t('by @bringliveryman (@cost)', array('@bringliveryman' => $bringliverymenprofile->title, '@cost' => t('free')));
+		}
+		else if ($shippingvalue == 'centralpickup'){
+			
+			$storage_data = field_collection_item_load($shippingoptionarray[6]);
+			$shippingoptionoutput = ' "' . $storage_data->field_address[LANGUAGE_NONE][0]['name_line'] . '" ' . t('on @weekday, @day. @month @year - @time1 until @time2', array('@weekday' => t($engweekday), '@day' => $day, '@month' => $month, '@year' => $year, '@time1' => $time1, '@time2' => $time2));
+		}
+		//Display selected shipping type in correct language
+		$temp = array();
+
+		$tppquery = new EntityFieldQuery;
+		$tppshippingtype_ids = $tppquery
+			->entityCondition('entity_type', 'node')
+			->propertyCondition('type', 'deliverytype')
+			->fieldOrderBy('field_weight', 'value')
+			->execute();
+
+		$tppshipping_types = entity_load('node', array_keys($tppshippingtype_ids['node']));
+
+		foreach($tppshipping_types as $tppkey=>$tppvalue) {
+			$temp[$tppvalue->field_deliverykey[LANGUAGE_NONE][0]['value']] = $tppvalue->title;
+		}
+			
+			
+		//$form['bof_checkout']['payment']['#prefix'] .= '<tr><td colspan="6">' . t('Delivery method') . ': ' . t($temp[$shippingvalue]) . ' ' . $shippingoptionoutput . '</td></tr>';
+		//Step through all products from this seller to create table rows and form elements for cart display
+		foreach($value['product'] as $productkey => $productvalue) {
+			$field = field_info_field('field_frequency');
+			$allowed_values = list_allowed_values($field);
+			//Fill helper variable for calculating totals
+			$valueaddup += $productvalue['gesamt'];
+			$vataddup += $productvalue['gesamt_mwst'];
+		}
+	}
+	//Sum up costs for shipping
+	$shippingtax = 19;
+	$shippingtaxamount = $shipping * $shippingtax / ($shippingtax + 100);
+	//Sum up totals with shipping
+	$vataddup += $shippingtaxamount;
+	$valueaddup += $shipping;
+
+	$currentbalance = 0;
+	$currentbalance = (float)userpoints_get_current_points($user->uid, 446);
+	
+	if($currentbalance <= 0) {
+		$currentbalance = 0;
+	}
+	else {
+		if($valueaddup < $currentbalance) {
+			$currentbalance = $valueaddup;
+		}
+
+		$valueaddup -= $currentbalance;
+
+	}
+
+	//Form submit
+ 	$form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => t('Place order'),
+	);
+	$form['submit']['#prefix'] = '<br /><a href="/checkout/payment">' . t('Back') . '</a> ';
+	return $form;
+}
+
+function regiomino_order_calc_paypal_fee($value, $maxiteration) {
+	if($maxiteration > 0) {
+		$maxiteration--;
+		$number = $value * 0.019;
+		$temp = regiomino_order_calc_paypal_fee($number, $maxiteration);
+		return $value + $temp;
+	}
+	else {
+		return 0;
+	}
+}
+
+/**
+ * Submit procedure of regiomino_order_payment_form.
+ *
+ * Creates a new order
+ */
+function regiomino_order_payment_form_submit($form, &$form_state) {
+	//Get uid of currently logged in user
+	global $user;
+	$uid = $user->uid;
+	$userobject = user_load($user->uid);
+	$paymenttype = field_get_items('user', $userobject, 'field_payment');
+	if(!$paymenttype[0]['value']) $paymenttype[0]['value'] = 'prepaid';
+	$addressitems = field_get_items('user', $userobject, 'field_shippingaddress');
+	$phoneitem = field_get_items('user', $userobject, 'field_privatephone');
+	if(is_null($phoneitem[0]['number'])) $phoneitem[0]['number'] = '';
+	$billingaddressitems = field_get_items('user', $userobject, 'field_billingaddress');
+	//$balanceitems = field_get_items('user', $userobject, 'field_use_balance_for_purchase');
+	$currentbalance = (float)userpoints_get_current_points($uid, 446);
+	if($billingaddressitems[0]['locality'] == '') {
+		$billingaddressitems = $addressitems;
+	}
+	//Retrieve cart contents
+	$warenkorb = regiomino_cart_load_cart();
+
+	$order = array();
+	$totalofproducts = 0;
+	//Check if all selected amounts from the cart are still available and are within time limits. If not, redirect back to cart.
+	foreach($warenkorb as $verkaeuferkey=>$verkaeufervalue) {
+		foreach($verkaeufervalue['product'] as $productkey=>$productvalue) {
+			$nodeobject = node_load($productvalue['nid']);
+			$availability = regiomino_offer_availability($nodeobject, $productvalue['menge']);
+			if($availability->available != 2) {
+				regiomino_cart_remove_product($productkey, 'One or more products are not available anymore and have been removed. <strong>Your order has not been placed yet</strong>. Please check your items before you continue.', 'error', 'checkout/verify');
+			}
+		}	
+	}
+	
+	/**
+	 * 5 Euro Willkommensbonus für den Bamberg Start
+	 */
+	//$done = regiomino_order_bamberg_rebate($warenkorb, $userobject);
+	
+	//Create db entry for this order process and store payment information with it
+	
+	$transaction_fee = 0;
+/* 	if($paymenttype[0]['value'] == 'paypal') {
+		$transaction_fee = regiomino_order_get_txnfee_currentcart($warenkorb, $currentbalance);
+	} */
+	
+	$payment_id = db_insert('regiomino_order_payment')
+		->fields(array(
+			'payment_type' => $paymenttype[0]['value'],
+			'transaction_fee' => $transaction_fee,
+		))
+		->execute();
+
+	$ordertotal = 0;
+	//Step through the different sellers of this order and store shipping data for each seller in db
+	foreach($warenkorb as $verkaeuferkey=>$verkaeufervalue) {
+		
+		$selectedshippingoption = array();
+		$selectedshippingoption = explode("-", $verkaeufervalue['product'][key($verkaeufervalue['product'])]['shipping_option']);
+
+		$shipping_id = db_insert('regiomino_order_shipping')
+			->fields(array(
+				'shipping_type' => $verkaeufervalue['product'][key($verkaeufervalue['product'])]['shipping_type'],
+				'shipping_option' => $verkaeufervalue['product'][key($verkaeufervalue['product'])]['shipping_option'],
+				'shipping_range_from' => $selectedshippingoption[1],
+				'shipping_range_to' => $selectedshippingoption[2],
+				'pickup_range_from' => $selectedshippingoption[3],
+				'pickup_range_to' => $selectedshippingoption[4],
+				'uid' => $selectedshippingoption[0],
+				'uid_p' => $selectedshippingoption[8],
+				'fci' => $selectedshippingoption[6],
+				'fci_p' => $selectedshippingoption[7],
+				'shipping_price' => (float)$selectedshippingoption[5],
+			))
+			->execute();
+			
+		/**
+		 * Store shipping fees in users userpoints
+		 */
+		$shipping_price = (float)$selectedshippingoption[5];
+		$shipping_price *= -1;		
+		//regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display)
+		$transactionid = regiomino_user_write_points(
+			$shipping_price,
+			446,
+			$uid,
+			t('Shipping fee for shipping agreement @shipping', array('@shipping' => $shipping_id)),
+			'shipping_agreement_' . $shipping_id,
+			'customer',
+			FALSE
+		);
+
+		//Step through each product for the current seller and create a restructured array for all orders
+		$sellernid = $verkaeufervalue['profile']['profil_nid'];
+		$negativeprice = 0;
+		foreach($verkaeufervalue['product'] as $productkey=>$productvalue) {
+			$order[$uid][$productvalue['nid']]['preis'] = (double)$productvalue['einzelpreis_wert'];
+			$order[$uid][$productvalue['nid']]['menge'] = (int)$productvalue['menge'];
+			$order[$uid][$productvalue['nid']]['frequency'] = (int)$productvalue['frequency'];
+			$order[$uid][$productvalue['nid']]['comments'] = $productvalue['comments'];
+			$order[$uid][$productvalue['nid']]['versand'] = $shipping_id;
+			$order[$uid][$productvalue['nid']]['vid'] = (int)$productvalue['vid'];
+			$order[$uid][$productvalue['nid']]['sellernid'] = $sellernid;
+			/**
+			 * Store transaction in users userpoints
+			 */
+			$upmenge = (int)$productvalue['menge'];
+			$uppreis = (double)$productvalue['einzelpreis_wert'];
+			$negativeprice -= $productvalue['gesamt'];
+		}			
+		
+		$ordertotal += $negativeprice * -1;
+		
+/* 		//regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display)
+		$transactionid = regiomino_user_write_points(
+			$negativeprice,
+			446,
+			$uid,
+			t('Order number @number', array('@number' => $shipping_id)),
+			'order_number_' . $shipping_id,
+			'customer',
+			FALSE
+		); */
+			
+		if($paymenttype[0]['value'] == 'prepaid') {
+			//Sent mail to seller with product overview
+			$profileofseller = node_load($sellernid);
+			//Pass order process id as parameter
+			$params['sellerprofile'] = $profileofseller;
+			//Pass payment type as parameter
+			$params['products'] = $verkaeufervalue['product'];
+			//Set recipients
+			$params['headers'] = array();
+			//$params['headers']['Cc'] = '09131995003@simple-fax.de';
+			//Pass shipping option as parameter
+			$params['shipping_option'] = $selectedshippingoption;
+			//Pass customer information as parameter
+			$params['customer_info'] = $userobject;
+			$params['order_process_id'] = $payment_id;
+			//Get user e-mail
+			$to = $profileofseller->field_email[LANGUAGE_NONE][0]['email'];
+			//$to = 'mfrericks@gmail.com';
+			//Get site-wide email address
+			$email_from = variable_get('site_mail', '');
+			$sent = drupal_mail('regiomino_order', 'seller_orderconfirmation', $to, language_default(), $params, $email_from, TRUE);
+			if(isset($profileofseller->field_publicfax[LANGUAGE_NONE][0]['number']) && !empty($profileofseller->field_publicfax[LANGUAGE_NONE][0]['number'])) {
+				$faxnumber = '0' . ltrim($profileofseller->field_publicfax[LANGUAGE_NONE][0]['number'], '0');
+				$to = $faxnumber . '@simple-fax.de';
+				$sent = drupal_mail('regiomino_order', 'seller_orderconfirmation_fax', $to, language_default(), $params, $email_from, TRUE);
+			}
+		}
+	}
+	//Step through the restructured order-array and store data in order-table
+	foreach($order as $uidkey=>$uidvalue) {
+		foreach($uidvalue as $nidkey=>$nidvalue) {
+			//Get unformatted discounted product price
+			$nodeobject = node_load($nidkey);
+			$preis = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', $nidvalue['menge'], 'field_tu_gross') / $nidvalue['menge'];
+			$ordertime = time();
+			$created = date('Y-m-d G:i:s', $ordertime);
+			$sellerprofilenode = node_load($nidvalue['sellernid']);
+			$selleraddressitems = field_get_items('node', $sellerprofilenode, 'field_address');
+			if($paymenttype[0]['value'] == 'prepaid') {
+				$order_status_type = 'completed';
+			}
+			else {
+				$order_status_type = 'pending';
+			}
+			
+			$query = db_insert('regiomino_order')
+				->fields(array(
+				'order_process_id' => $payment_id,
+				'uid' => $uidkey,
+				'uid_s' => $sellerprofilenode->uid,
+				'nid' => $nidkey,
+				'vid' => $nidvalue['vid'],
+				'order_status' => $order_status_type,
+				'product_price' => $preis,
+				'product_count' => $nidvalue['menge'],
+				'shipping' => $nidvalue['versand'],
+				'primary_email' => $user->mail,
+				'delivery_first_name' => $addressitems[0]['first_name'],
+				'delivery_last_name' => $addressitems[0]['last_name'],
+				'delivery_phone' => $phoneitem[0]['number'],
+				'delivery_company' => '', //tbd
+				'delivery_street1' => $addressitems[0]['thoroughfare'],
+				'delivery_street2' => $addressitems[0]['premise'],
+				'delivery_city' => $addressitems[0]['locality'],
+				'delivery_zone' => 0, //tbd
+				'delivery_postal_code' => $addressitems[0]['postal_code'],
+				'delivery_country' => '276', //tbd
+				'billing_first_name' => $billingaddressitems[0]['first_name'],
+				'billing_last_name' => $billingaddressitems[0]['last_name'],
+				'billing_phone' => $phoneitem[0]['number'],
+				'billing_company' => '', //tbd
+				'billing_street1' => $billingaddressitems[0]['thoroughfare'],
+				'billing_street2' => $billingaddressitems[0]['premise'],
+				'billing_city' => $billingaddressitems[0]['locality'],
+				'billing_zone' => 0, //tbd
+				'billing_postal_code' => $billingaddressitems[0]['postal_code'],
+				'billing_country' => '276', //tbd
+				'seller_phone' => '',
+				'seller_company' => $sellerprofilenode->field_company_name[LANGUAGE_NONE][0]['value'], //tbd
+				'seller_street1' => $selleraddressitems[0]['thoroughfare'],
+				'seller_street2' => $selleraddressitems[0]['premise'],
+				'seller_city' => $selleraddressitems[0]['locality'],
+				'seller_zone' => 0, //tbd
+				'seller_postal_code' => $selleraddressitems[0]['postal_code'],
+				'seller_country' => '276', //tbd
+				'data' => serialize(array('frequency' => $nidvalue['frequency'], 'comments' => $nidvalue['comments'])),
+				'created' => $ordertime,
+				'modified' => $ordertime,
+				'host' => ip_address(),
+				'session' => session_id(),			
+			))
+			->execute();
+
+			//Set node property to soldout, if the current stock is zero after this order
+			$stock = regiomino_offer_get_currentstock($nodeobject, FALSE);
+			if($stock == 0) {
+				$nodeobject->soldout = 1;
+				node_save($nodeobject);
+			}
+		}	
+	}
+	
+	if($paymenttype[0]['value'] == 'sofort') {
+	
+		global $base_url;
+		global $base_path;
+		$return_url = $base_url . $base_path . 'thankyou';
+		$error_return = $base_url . $base_path . 'checkout/payment';
+
+		$pw = variable_get('regiomino_payment_novalnet_password', 'eb1e78328c46506b46a4ac4a1e378b91');
+
+		#Verschlüsselung
+		
+		$vendor = variable_get('regiomino_payment_novalnet_vendor', 1852);
+		$auth_code_encoded = variable_get('regiomino_payment_novalnet_authcode', 'fXtYibPcVkVy7iJvKQ0WPZ2yK6Mwan');
+		$product_encoded = variable_get('regiomino_payment_novalnet_product', 2489);
+		$tariff_encoded = variable_get('regiomino_payment_novalnet_tariff', 4115);
+		$test_mode_encoded = variable_get('regiomino_payment_novalnet_testmode', 0);
+		
+		$auth_code_encoded = regiomino_order_novalnet_encode($auth_code_encoded, $pw);
+		$product_encoded = regiomino_order_novalnet_encode($product_encoded, $pw);
+		$tariff_encoded = regiomino_order_novalnet_encode($tariff_encoded, $pw);
+		$test_mode_encoded = regiomino_order_novalnet_encode($test_mode_encoded, $pw);
+		$uniqid_encoded = regiomino_order_novalnet_encode($payment_id, $pw);
+		$amount_encoded = regiomino_order_novalnet_encode((round($ordertotal,2)-$currentbalance)*100, $pw);
+
+		#Hashwert-Berechnung
+		$hashP = array(
+			'product_id' => $product_encoded,
+			'tariff' => $tariff_encoded,
+			'auth_code' => $auth_code_encoded,
+			'amount' => $amount_encoded,
+			'test_mode' => $test_mode_encoded,
+			'uniqid' => $uniqid_encoded,
+		);
+		$hash = regiomino_order_novalnet_hashIt($hashP, $pw);
+
+		
+		/*Die o.g. 6 Parameter (auth_code, product, tariff, amount, test_mode, uniqid) werden auch bei der Antwort von Novalnet entsprechend verschlüsselt, der Hash-Wert seitens Novalnet wird im Parameter hash2 übermittelt. Anhand der Funktion checkHash (siehe unten) kann man feststellen, ob eine Manipulation stattgefunden hat:
+		$_REQUEST enthält u.a.:
+		$_REQUEST['hash2'],
+		$_REQUEST['auth_code'],
+		$_REQUEST['product'],
+		$_REQUEST['tariff'],
+		$_REQUEST['amount'],
+		$_REQUEST['test_mode'],
+		$_REQUEST['uniqid']
+		*/
+		/*
+		#nun check
+		if (regiomino_order_novalnet_checkHash($_REQUEST, $pw) == true) {}#OK
+		else{}#not OK, Daten sind vielleicht manipuliert.
+		#Entschlüsselung:
+		$auth_code = regiomino_order_novalnet_decode($auth_code_encoded, $pw); # oder $auth_code = regiomino_order_novalnet_decode($_REQUEST['auth_code'], $pw);
+		$product = regiomino_order_novalnet_decode($product_encoded, $pw);
+		$tariff = regiomino_order_novalnet_decode($tariff_encoded, $pw);
+		$amount = regiomino_order_novalnet_decode($amount_encoded, $pw);
+		$test_mode = regiomino_order_novalnet_decode($test_mode_encoded, $pw);
+		$uniqid = regiomino_order_novalnet_decode($uniqid_encoded, $pw);
+		*/
+		
+		$url = $base_path . 'checkout/provider';
+		$options = array(
+			'query' => array(
+				'utf8' => 1,
+				'vendor' => $vendor,
+				'product' => $product_encoded,
+				'key' => 33,
+				'tariff' => $tariff_encoded,
+				'auth_code' => $auth_code_encoded,
+				'currency' => 'EUR',
+				'amount' => $amount_encoded,
+				'first_name' => $billingaddressitems[0]['first_name'],
+				'last_name' => $billingaddressitems[0]['last_name'],
+				'email' => $user->mail,
+				'street' => $billingaddressitems[0]['thoroughfare'],
+				'search_in_street' => 1,
+				'city' => $billingaddressitems[0]['locality'],
+				'zip' => $billingaddressitems[0]['postal_code'],
+				'country_code' => 'DE',
+				'lang' => 'DE',
+				'remote_ip' => ip_address(),
+				'return_url' => $return_url,
+				'return_method' => 'POST',
+				'error_return_url' => $error_return,
+				'error_return_method' => 'POST',
+				'test_mode' => $test_mode_encoded,
+				'user_variable_0' => 'www.regiomino.de',
+				'uniqid' => $uniqid_encoded,
+				'hash' => $hash,
+			),
+			'https' => TRUE,
+		);
+		$payment_goto = $url;
+		$payment_options = $options;	
+	}
+	elseif($paymenttype[0]['value'] == 'debit') {
+	
+		global $base_url;
+		global $base_path;
+		$return_url = $base_url . $base_path . 'thankyou';
+		$error_return = $base_url . $base_path . 'checkout/verify';
+
+
+		$vendor = variable_get('regiomino_payment_novalnet_vendor', 1852);
+		$auth_code_encoded = variable_get('regiomino_payment_novalnet_authcode', 'fXtYibPcVkVy7iJvKQ0WPZ2yK6Mwan');
+		$product_encoded = variable_get('regiomino_payment_novalnet_product', 2489);
+		$tariff_encoded = variable_get('regiomino_payment_novalnet_tariff', 4115);
+		$test_mode_encoded = variable_get('regiomino_payment_novalnet_testmode', 0);
+		$uniqid_encoded = $payment_id;
+		$amount_encoded = (round($ordertotal,2)-$currentbalance)*100;
+		
+		$url = variable_get('regiomino_payment_novalnet_paygate', 'https://payport.novalnet.de/paygate.jsp');
+		$options = array(
+			'query' => array(
+				'utf8' => 1,
+				'amount' => $amount_encoded,
+				'currency' => 'EUR',
+				'vendor' => $vendor,
+				'auth_code' => $auth_code_encoded,
+				'product' => $product_encoded,
+				'tariff' => $tariff_encoded,
+				'key' => 2,
+				'remote_ip' => ip_address(),
+				'first_name' => $billingaddressitems[0]['first_name'],
+				'last_name' => $billingaddressitems[0]['last_name'],
+				'street' => $billingaddressitems[0]['thoroughfare'],
+				'house_no' => '',
+				'search_in_street' => 1,
+				'city' => $billingaddressitems[0]['locality'],
+				'zip' => $billingaddressitems[0]['postal_code'],
+				'country_code' => 'DE',
+				'email' => $user->mail,
+				'bank_code' => $userobject->field_bankcode[LANGUAGE_NONE][0]['value'],
+				'bank_account' => $userobject->field_bankaccount[LANGUAGE_NONE][0]['value'],
+				'bank_account_holder' => $userobject->field_bankaccountholder[LANGUAGE_NONE][0]['value'],
+				'test_mode' => $test_mode_encoded,
+				'order_no' => $uniqid_encoded,
+				'customer_no' => $user->uid,
+			),
+			'https' => TRUE,
+			'external' => TRUE,
+		);
+		$full_url = url($url, $options);
+		
+		if($test_mode_encoded) {
+			$status = 100;
+			$order_no = $uniqid_encoded;
+			$amount = $amount_encoded;
+		}
+		else {
+			$result = drupal_http_request($full_url);
+			parse_str($result->data);
+		}
+		
+		if($status >= 501001 && $status <= 501007) {
+			watchdog('novalnet_debit', 'Debit payment failed due to invalid account data: @data', array('@data' => $result->data));
+			drupal_set_message(t('Your bank data could not be verified. Please check your inputs.'), 'error');
+			drupal_goto('checkout/payment');
+		}
+		elseif($status != 100) {
+			watchdog('novalnet_debit', 'Debit payment failed: @data', array('@data' => $result->data));
+			drupal_set_message(t('Your payment could not be performed. Please contact Regiomino support about this.'), 'error');
+			drupal_goto('checkout/payment');
+		}
+		else {
+			regiomino_order_successfulpayment($order_no, $amount, 'debit');
+			$payment_goto = 'thankyou';
+			$payment_options = array();
+		}
+	}
+	elseif($paymenttype[0]['value'] == 'paypal') {
+		global $base_url;
+		global $base_path;
+		$return_url = $base_url . $base_path . 'thankyou';
+		$cancel_return = $base_url . $base_path . 'checkout/payment';
+		$notify_url = $base_url . $base_path . 'checkout/confirmation';
+		$cmd = '_cart';
+		$upload = 1;
+		$currency = 'EUR';
+		$image = $base_url . $base_path . drupal_get_path('theme', 'regiomino_seven') . '/images/paypallogo.png';
+		$paypal_email = variable_get('regiomino_payment_paypal_account', '');
+		$url = 'https://www.paypal.com/cgi-bin/webscr';
+		$options = array(
+			'query' => array(
+				'cmd' => $cmd,
+				'upload' => $upload,
+				'business' => $paypal_email,
+				'amount' => $item_amount,
+				'return' => $return_url,
+				'cancel_return' => $cancel_return,
+				'notify_url' => $notify_url,
+				'currency_code' => $currency,
+				'no_shipping' => 1,
+				'image_url' => $image,
+				'first_name' => $billingaddressitems[0]['first_name'],
+				'last_name' => $billingaddressitems[0]['last_name'],
+				'address1' => $billingaddressitems[0]['thoroughfare'],
+				'address2' => $billingaddressitems[0]['premise'],
+				'city' => $billingaddressitems[0]['locality'],
+				'zip' => $billingaddressitems[0]['postal_code'],
+				'custom' => $payment_id,
+				'invoice' => $payment_id,
+				//'email' => $user->mail,
+			),
+			'https' => TRUE,
+			'external' => TRUE,
+		);
+		
+		if($currentbalance != 0) {
+			$options['query']['discount_amount_cart'] = $currentbalance;
+		}
+		
+		//Add cart items to query
+		$counter = 1;
+		$shipping = 0;
+		foreach($warenkorb as $verkaeuferkey=>$verkaeufervalue) {
+			//Retrieve selected shipping type for use in #default_value key of form element
+			foreach($verkaeufervalue['product'] as $fkey => $fvalue) {
+				//Since shipping is the same for all items of this current seller, it doesn't matter which one we take.
+				//Just loop through all cart item id's and take the last.
+				$my_cart_item_id = $fkey;
+			}
+			//Retrieve shipping type for cart item id from db and write in variable			
+			$shippingvalue = $verkaeufervalue['product'][$my_cart_item_id]['shipping_type'];
+			//Retrieve shipping type for cart item id from db and write in variable	
+			$shippingoption = $verkaeufervalue['product'][$my_cart_item_id]['shipping_option'];
+			//Select chosen delivery options
+			$shippingoptionarray = explode("-", $shippingoption);
+			$shipping += $shippingoptionarray[5];
+			
+			foreach($verkaeufervalue['product'] as $productkey=>$productvalue) {
+				$nodeobject = node_load($productvalue['nid']);
+				$options['query']['item_name_' . $counter] = $productvalue['title'];
+				$options['query']['item_number_' . $counter] = $productvalue['nid'];
+				$options['query']['amount_' . $counter] = $productvalue['einzelpreis_wert'];
+				$options['query']['quantity_' . $counter] = $productvalue['menge'];
+				$counter++;
+			}	
+		}
+
+		//Sum up costs for shipping
+		if($shipping > 0) {
+			$options['query']['item_name_' . $counter] = t('Shipping fee');
+			$options['query']['item_number_' . $counter] = '0';
+			$options['query']['amount_' . $counter] = $shipping;
+			$options['query']['quantity_' . $counter] = 1;
+			$counter++;
+		}
+
+		/* $txn_fee = regiomino_order_get_txnfee_currentcart($warenkorb, $currentbalance);
+
+		$options['query']['item_name_' . $counter] = t('Transaction fee');
+		$options['query']['item_number_' . $counter] = '0';
+		$options['query']['amount_' . $counter] = $txn_fee;
+		$options['query']['quantity_' . $counter] = 1; */
+
+		/**
+		 * Store transaction fee in users userpoints
+		 */
+/* 		$negativeprice = 0 - $txn_fee;
+		$upointparams = array(
+			'uid' => $uid,
+			'points' => $negativeprice,
+			'description' => 'PayPal: ' . t('Transaction fee for order process @number', array('@number' => $payment_id)),
+			'reference' => 'paypal_fee_' . $payment_id,
+			'operation' => 'customer',
+			'display' => FALSE,
+			'tid' => 446,
+		);
+		$upret = userpoints_userpointsapi($upointparams);
+		$txnbalance = (float)userpoints_get_current_points($uid, 446);
+		$txn_id = $upret['transaction']['txn_id'];
+		$txn_query = db_update('{userpoints_txn}')
+			->fields(
+				array(
+					'balance' => $txnbalance,
+				)
+			)
+			->condition('txn_id', $txn_id)
+			->execute(); */
+
+		$payment_goto = $url;
+		$payment_options = $options;	
+	}
+	else {
+		$payment_goto = 'thankyou';
+		$payment_options = array();
+		
+		//regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display)
+		$transactionid = regiomino_user_write_points(
+			$ordertotal*-1,
+			446,
+			$user->uid,
+			t('Order process ID') . ' ' . $payment_id,
+			'order_process_id_' . $payment_id,
+			'customer',
+			FALSE
+		);
+		
+		/**
+		 * E-Mails an alle Beteiligten verschicken
+		 */
+		//Get user e-mail
+		$to = $user->mail;
+		//Get site-wide email address
+		$email_from = variable_get('site_mail', '');
+		//Pass order process id as parameter
+		$params['orderid'] = $payment_id;
+		//Pass payment type as parameter
+		$params['paymenttype'] = $paymenttype[0]['value'];
+		//Pass payment url as parameter
+		$params['paymentgoto'] = $payment_goto;
+		//Pass payment options as parameter
+		$params['paymentoptions'] = $payment_options;
+		$params['paymentoptions']['absolute'] = TRUE;
+		//Pass user as parameter
+		$params['userobject'] = $userobject;
+		//Pass user address as parameter
+		$params['addressitems'] = $addressitems;
+		//Pass Cart as parameter
+		$params['warenkorb'] = $warenkorb;
+		//Pass timestamp as parameter
+		$params['created'] = $ordertime;
+		//Create a disclaimer for the mail
+		$params['disclaimer'] = t('Confirmation of your order at Regiomino. Please keep this email until your order is completed.');	global $base_url;
+		//Set current balance
+		$params['currentbalance'] = $currentbalance;
+		//Set BCC
+		$params['headers'] = array(
+			'Bcc' => 'system@regiomino.de',
+		);
+		
+		//Send email
+		$sent = drupal_mail('regiomino_order', 'customer_orderconfirmation', $to, language_default(), $params, $email_from, TRUE);
+
+		//handle send fail, $sent ===false when mail fails, but it won't always recognize a failure
+		if(!$sent){
+		}
+		//Empty cart
+		// $query = db_delete('{regiomino_cart}')
+		// ->condition('cart_id', $uid)
+		// ->execute();
+		regiomino_cart_delete_cart($uid);
+	}
+	
+	drupal_goto($payment_goto, $payment_options);
+}
+
+/**
+ * Implements hook_mail().
+ */
+function regiomino_order_mail($key, &$message, $params) {
+	global $base_url;
+	global $base_path;
+	switch($key) {
+		//switching on $key lets you create variations of the email based on the $key parameter
+		case 'customer_orderconfirmation':
+		
+			$message['subject'] = t('Confirmation of your order');
+			$orderdate = date('d.m.Y, G:i', $params['created']);
+			$output = '<h4 class="h4" style="display:block; color:#202020; font-family:Arial; font-size:18px; font-weight:bold; line-height:100%; margin-top:50px; margin-right:0; margin-bottom:10px; margin-left:0; text-align:left;">' . t('Order items') . ':</h4><dl>';
+			//Create order tables
+			$orderaddup = 0;
+			$shipping = 0;
+			$cancellationpolicy = array();
+			foreach($params['warenkorb'] as $wkey=>$value) {
+				$valueaddup = 0;
+				$vataddup = 0;
+				
+/* 				//Retrieve selected shipping type for use in #default_value key of form element
+				foreach($value['product'] as $fkey => $fvalue) {
+					//Since shipping is the same for all items of this current seller, it doesn't matter which one we take.
+					//Just loop through all cart item id's and take the last.
+					$my_cart_item_id = $fkey;
+				}
+				//Retrieve shipping type for cart item id from db and write in variable			
+				$shippingvalue = $value['product'][$my_cart_item_id]['shipping_type'];
+				//Retrieve shipping type for cart item id from db and write in variable	
+				$shippingoption = $value['product'][$my_cart_item_id]['shipping_option'];
+				//Select chosen delivery options
+				$shippingoptionarray = explode("-", $shippingoption);				*/				
+
+				$shippingoptionarray = array();
+				$shippingoptionarray = explode("-", $value['product'][key($value['product'])]['shipping_option']);
+				$shippingtype = $value['product'][key($value['product'])]['shipping_type'];
+				
+				$shipping = $shippingoptionarray[5];
+				$bringliverymenuser = user_load($shippingoptionarray[8]);
+				$bringliverymenprofile = node_load($bringliverymenuser->field_profilereference_shipper['und'][0]['target_id']);
+				$day1 = date("d", $shippingoptionarray[1]);
+				$month1 = t(date("F", $shippingoptionarray[1]));
+				$year1 = date("Y", $shippingoptionarray[1]);
+				$time1 = date("H:i", $shippingoptionarray[1]);
+				$day2 = date("d", $shippingoptionarray[2]);
+				$month2 = t(date("F", $shippingoptionarray[2]));
+				$year2 = date("Y", $shippingoptionarray[2]);
+				$time2 = date("H:i", $shippingoptionarray[2]);
+				
+				if($shippingtype == 'centralpickup') {
+					$deliverylabel = t('Pickup');
+					$storage_data = field_collection_item_load($shippingoptionarray[6]);
+					$shippingoptionoutput = $day1 . '. ' . $month1 . ' ' . $year1 . ' - ' . $time1 . ' ' . t('until') . ' ' . $time2 . ' ' . t('at') . ' Regiomino Point "' . $storage_data->field_address[LANGUAGE_NONE][0]['name_line'] . '" (<a href="http://maps.google.de/maps?q=' . urlencode($storage_data->field_address[LANGUAGE_NONE][0]['thoroughfare'] . ', ' . $storage_data->field_address[LANGUAGE_NONE][0]['postal_code'] . ' ' . $storage_data->field_address[LANGUAGE_NONE][0]['locality']) . '&t=h&z=17">' . t('Routing') . '</a>)';
+				}
+				else {
+					$deliverylabel = t('Delivery');
+					$shippingoptionoutput = $day1 . '. ' . $month1 . ' ' . $year1 . ' - ' . $time1 . ' ' . t('until') . ' ' . $time2 . ' ' . t('by') . ' ' . $bringliverymenprofile->title;
+				}
+				
+				$output .= '<dt><strong>' . t('Sold by') . ' ' . $value['profile']['users_profile_title'] . '</strong> (' . t('<a href="@url">Cancellation policy</a>', array('@url' => 'http://www.regiomino.de/node/' . $value['profile']['profil_nid'] . '/widerruf')) . ')</dt><dd><p><em>' . $deliverylabel . ':</em> ' . $shippingoptionoutput . '<br /><table border="1" cellpadding="10" cellspacing="00" ><tr><th>' . t('Product / shipping') . '</th><th>' . t('Price') . '</th><th>' . t('Amount') . '</th><th>' . t('included VAT') . '</th><th>' . t('Total') . '</th></tr>';
+				
+				$cancellationpolicy[] = views_embed_view('cancellation_policy_seller', 'default', $value['profile']['profil_nid']);				
+				
+				foreach($value['product'] as $productkey => $productvalue) {
+					$output .= '<tr><td>' . $productvalue['title'] . '</td><td>' . $productvalue['preis'] . ' / ' . $productvalue['einheit'] . '</td><td>' . $productvalue['menge'] . '</td><td>' . number_format($productvalue['gesamt_mwst'], 2, ',', '.') . ' ' . variable_get('regiomino_currency_entity', '&euro;') . ' (' . number_format($productvalue['mwst_wert'], 2, ',', '.') . '%)</td><td>' . number_format($productvalue['gesamt'], 2, ',', '.') . ' ' . variable_get('regiomino_currency_entity', '&euro;') . '</td></tr>';
+					//Fill helper variable for calculating totals
+					$valueaddup += $productvalue['gesamt'];
+					$vataddup += $productvalue['gesamt_mwst'];
+				}
+				
+				//Sum up costs for shipping
+
+				$shippingtax = 19;
+				$shippingtaxamount = $shipping * $shippingtax / ($shippingtax + 100);
+				$valueaddup += $shipping;
+				$vataddup += $shippingtaxamount;
+				$orderaddup += $valueaddup;
+				$output .= '<!--<tr><td colspan="4">' . t('Shipping costs') . ' (' . t('including @perc sales tax', array('@perc' => number_format($shippingtax, 2, ',', '.') . '%')) . ')</td><td>' . number_format($shipping, 2, ',', '.') . ' ' . variable_get('regiomino_currency_entity', '&euro;') . '</td></tr>--><tr><td colspan="4">' . t('Total excl. sales tax') . '</td><td>' . 	number_format($valueaddup-$vataddup, 2, ',', '.') . ' ' . variable_get('regiomino_currency_entity', '&euro;') . '</td></tr><tr><td colspan="4">' . t('contained sales tax') . '</td><td>' . number_format($vataddup, 2, ',', '.') . ' ' . variable_get('regiomino_currency_entity', '&euro;') . '</td></tr><tr><td colspan="4"><strong>' . t('Total') . '</strong></td><td><strong>' . number_format($valueaddup, 2, ',', '.') . ' ' . variable_get('regiomino_currency_entity', '&euro;') . '</strong></td></tr></table><br /></dd>';
+			}
+			$output .= '</dl>';
+			
+			foreach($cancellationpolicy as $cnclkey => $cnclvalue) {
+				$output .= $cnclvalue;
+			}
+			
+			$headerinfo = '<h4 class="h4" style="display:block; color:#202020; font-family:Arial; font-size:18px; font-weight:bold; line-height:100%; margin-top:0px; margin-right:0; margin-bottom:10px; margin-left:0; text-align:left;">' . t('We confirm your order') . ':</h4><dl><dt><strong>' . t('Order process ID') . ':</strong></dt><dd>' . $params['orderid'] . '</dd><dt><strong>' . t('Recipient') . ':</strong></dt><dd>' . $params['addressitems'][0]['first_name'] . ' ' . $params['addressitems'][0]['last_name'] . '</dd><dt><strong>' . t('Customer number') . ':</strong></dt><dd>' . $params['userobject']->uid . '</dd><dt><strong>' . t('Order date') . ':</strong></dt><dd>' . $orderdate . '</dd><dt><strong>' . t('Address') . ':</strong></dt><dd>' . $params['addressitems'][0]['first_name'] . ' ' . $params['addressitems'][0]['last_name'] . '</dd><dd>' . $params['addressitems'][0]['thoroughfare'] . '</dd>';
+			if($params['addressitems'][0]['premise'] != '') $headerinfo .= '<dd>' . $params['addressitems'][0]['premise'] . '</dd>';
+			$headerinfo .= '<dd>' . $params['addressitems'][0]['postal_code'] . ' ' . $params['addressitems'][0]['locality'] . '</dd><dt><strong>' . t('Payment type') . ':</strong></dt><dd>';
+			
+			
+			$query = new EntityFieldQuery;
+			$paymenttype_ids = $query
+				->entityCondition('entity_type', 'node')
+				->propertyCondition('type', 'paymenttype')
+				->fieldOrderBy('field_weight', 'value')
+				->execute();
+
+			$payment_types = entity_load('node', array_keys($paymenttype_ids['node']));
+			$payment = array();
+			
+			foreach($payment_types as $key=>$value) {
+				$payment[$value->field_paymentkey[LANGUAGE_NONE][0]['value']] = $value->title;
+			}
+			$payment['prepaid'] = t('Balance');
+			
+			$headerinfo .= $payment[$params['paymenttype']];			
+			$headerinfo .= '</dd></dl>';
+			
+			if($params['paymenttype'] != 'sofort' && $params['paymenttype'] != 'paypal') {
+				$headerinfo .= '<h4 class="h4" style="display:block; color:#202020; font-family:Arial; font-size:18px; font-weight:bold; line-height:100%; margin-top:50px; margin-right:0; margin-bottom:10px; margin-left:0; text-align:left;">' . $payment[$params['paymenttype']] . ':</h4>';
+			}
+			
+			if($params['currentbalance'] != 0) {
+				if($params['currentbalance'] < $orderaddup)	$orderaddup -= $params['currentbalance'];
+			}
+			
+			if($params['paymenttype'] == 'paypal') {
+
+				$paypalfee = regiomino_order_get_txnfee_currentcart($params['warenkorb'], $params['currentbalance'], FALSE);
+				
+				$orderaddup += $paypalfee;
+				
+				//$headerinfo .= '<p>' . t('You will receive another email, once your payment of <strong>@total €</strong> through Paypal has been confirmed', array('@total' => number_format($orderaddup, 2, ',', '.'))) . '</p>';
+				
+				//$headerinfo .= '<p>' . t('In case you did not finish payment after checking out, you can pickup the payment process by clicking on the following button') . '</p>';
+				//Zahlungsbutton erstellen
+				//$headerinfo .= '<p>' . t('In case you did not finish payment after checking out, you can pickup the payment process by clicking on the following button') . '</p><p>' . t('<a href="@url">Complete payment with @provider</a>', array('@url' => url($params['paymentgoto'], $params['paymentoptions']), '@provider' => $payment[$params['paymenttype']]));
+			}
+			elseif($params['paymenttype'] == 'prepaid') {
+				$headerinfo .= '<p>' . t('We have deducted the total of <strong>@total €</strong> from your balance.', array('@total' => number_format($orderaddup, 2, ',', '.'))) . '</p>';
+			}
+			elseif($params['paymenttype'] == 'debit') {
+				$headerinfo .= '<p>' . t('We have deducted the total of <strong>@total €</strong> from your bank account.', array('@total' => number_format($orderaddup, 2, ',', '.'))) . '</p>';
+			}
+			elseif($params['paymenttype'] == 'sofort') {
+				//$headerinfo .= '<p>' . t('In case you did not finish payment after checking out, you can pickup the payment process by clicking on the following button') . '</p><p>' . t('<a href="@url">Complete payment with @provider</a>', array('@url' => url($params['paymentgoto'], $params['paymentoptions']), '@provider' => $payment[$params['paymenttype']]));
+			}
+			
+			$headerinfo .= '<p>' . t('Thank you very much') . ',<br />' . t('Your Regiomino team') . '</p>';
+
+			$message['body'][] = $headerinfo . $output;
+			$message['headers'] += $params['headers'];				
+		break;
+		
+		case 'seller_orderconfirmation':
+			watchdog('sales', 'seller_orderconfirmation called');
+			$message['subject'] = t('You have incoming orders');
+			$additionalfax = '';
+			if(isset($params['sellerprofile']->field_publicfax[LANGUAGE_NONE][0]['number']) && !empty($params['sellerprofile']->field_publicfax[LANGUAGE_NONE][0]['number'])) {
+				$faxnumber = '0' . ltrim($params['sellerprofile']->field_publicfax[LANGUAGE_NONE][0]['number'], '0');
+				$additionalfax = '<p style="font-size: large;">Da Sie in Ihrem Profil eine Faxnummer angegeben haben, versuchen wir Ihnen zusätzlich diesen Anhang in Kopie als Fax zuzustellen. Ihre Nummer: ' . $faxnumber . '</p>';
+			}
+			$message['body'][] = '<p>' . t('Congratulations, you have incoming orders. Please check the attached PDF file for details on your sale.') . '</p>' . $additionalfax;
+			$message['headers'] += $params['headers'];
+			
+			// Never make an instance of TCPDF or TCPDFDrupal classes manually.
+			// Use tcpdf_get_instance() instead.
+			$tcpdf_params = array(
+				'unicode' => TRUE,
+				'encoding' => 'UTF-8',
+			);
+			// TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+			$tcpdf_class = array(
+				'class' => 'TCPDFRegiomino',
+				'filetype' => 'inc',
+				'filename' => 'regiomino_invoice.class',
+				'module' => 'regiomino_invoice',
+			);
+			// regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+			$tcpdf_config = array(
+				'filetype' => 'inc',
+				'filename' => 'regiomino_invoice.config',
+				'module' => 'regiomino_invoice', 
+			);
+			
+			$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+			
+			$tcpdf->DrupalInitialize(array(
+				'author' => 'Regiomino GmbH',
+				'title' => 'Bestelleingänge für ' . $params['sellerprofile']->title,
+				'subject' => 'Neue Bestelleingänge',
+				'keywords' => 'Regiomino, Rechnung, Bestellungen, Einkauf, Lebensmittel',
+				'footer' => array(
+					'html' => '&nbsp;',
+				),
+				'header' => array(
+					'html' => '&nbsp;',
+				),
+			));
+			$engweekday = date('l', $params['shipping_option'][3]);
+			$html = $additionalfax . '<p style="font-size: xx-large;"><strong>Bestellung ' . $params['order_process_id'] . ' bei ' . $params['sellerprofile']->title . '</strong></p><p style="font-size: x-large;"><strong>Abholung: ' . t($engweekday) . ', ' . date('d.m.Y', $params['shipping_option'][3]) . ', ' . date('H:i', $params['shipping_option'][3]) . ' - ' . date('H:i', $params['shipping_option'][4]) . '<br />von ';
+
+			$shipper = user_load($params['shipping_option'][0]);
+			
+			if($params['shipping_option'][6] == 0) {
+				$shippername = $shipper->field_address[LANGUAGE_NONE][0]['first_name'] . ' ' . $shipper->field_address[LANGUAGE_NONE][0]['last_name'] . ' (Selbstabholer)';
+			}
+			else {
+				$shipperprofile = node_load($shipper->field_profilereference_shipper[LANGUAGE_NONE][0]['target_id']);
+				
+				$phonenumber = '0' . ltrim($shipperprofile->field_privatephone[LANGUAGE_NONE][0]['number'], '0');
+				
+				$shippername = $shipperprofile->title . ' (Lieferant, Tel.: ' . $phonenumber . ')';
+			}
+			
+			$html .= $shippername;
+
+			
+			$html .= '</strong></p>
+			<p style="font-size: large;">Kunde: ' . $params['customer_info']->field_shippingaddress[LANGUAGE_NONE][0]['first_name'] . ' ' . $params['customer_info']->field_shippingaddress[LANGUAGE_NONE][0]['last_name'] . ' (Kundennr.: ' . $params['customer_info']->uid . ')</p>
+						<style>
+						tr.rechnungsposheader th {
+							border-bottom: 0.5px solid #000000;
+							font-weight: bold;
+							font-size: large;
+						}
+						tr.taxes th {
+							border-top: 0.5px solid #92BF20;
+							font-weight: bold;
+						}
+						tr.lastrow td {
+							border-bottom: 0.5px solid #000000;
+						}
+						tr.summary td {
+							font-weight: bold;
+						}
+						table.taxcalc {
+							font-size: small;
+						}
+						td {
+							font-size: large;
+						}
+						td.amountrow {
+							width: 50px;
+						}
+						td.descrow {
+							width: 350px;
+						}
+						th.amountrow {
+							width: 50px;
+						}
+						th.descrow {
+							width: 350px;
+						}
+					</style>
+					<table cellpadding="4">
+						<tr class="rechnungsposheader">
+							<th class="amountrow">Anzahl</th><th class="descrow">Angebot</th>
+						</tr>
+						';
+			
+			foreach($params['products'] as $productkey=>$productvalue) {
+			
+				$html .= '<tr>
+				<td class="amountrow">' . $productvalue['menge'] . ' x ' . $productvalue['einheit_amount'] . ' ' . t($productvalue['einheit_unit']) . '</td><td class="descrow">' . $productvalue['title'] . ' (# ' . $productvalue['nid'] . ')</td>
+				</tr>';
+			}
+						
+						
+						
+			$html .= '</table>
+					<br />
+
+					 
+					<p style="font-size: large;"><strong>Haben Sie Fragen?</strong></p>
+					<p>Bitte kontaktieren Sie uns per Mail unter support@regiomino.de</p>';
+			
+			$tcpdf->writeHTML($html);
+
+			$tcpdf->Output("private://r_sellerincoming_tmp.pdf", "F");
+			$filepath = "private://r_sellerincoming_tmp.pdf";
+			
+			$attachment = array(
+				'filecontent' => file_get_contents($filepath),
+				'filename' => 'NeueBestellungen.pdf',
+				'filemime' => 'application/pdf',
+			);
+			$message['params']['attachments'][] = $attachment;
+
+		break;
+		
+		case 'seller_orderconfirmation_fax':
+			watchdog('sales', 'seller_orderconfirmation_fax called');
+			$message['subject'] = t('You have incoming orders');
+
+			$message['body'][] = '<p>' . t('Congratulations, you have incoming orders. Please check the attached PDF file for details on your sale.') . '</p>';
+			$message['headers'] += $params['headers'];
+			
+			// Never make an instance of TCPDF or TCPDFDrupal classes manually.
+			// Use tcpdf_get_instance() instead.
+			$tcpdf_params = array(
+				'unicode' => TRUE,
+				'encoding' => 'UTF-8',
+			);
+			// TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+			$tcpdf_class = array(
+				'class' => 'TCPDFRegiomino',
+				'filetype' => 'inc',
+				'filename' => 'regiomino_invoice.class',
+				'module' => 'regiomino_invoice',
+			);
+			// regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+			$tcpdf_config = array(
+				'filetype' => 'inc',
+				'filename' => 'regiomino_invoice.config',
+				'module' => 'regiomino_invoice', 
+			);
+			
+			$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+			
+			$tcpdf->DrupalInitialize(array(
+				'author' => 'Regiomino GmbH',
+				'title' => 'Bestelleingänge für ' . $params['sellerprofile']->title,
+				'subject' => 'Neue Bestelleingänge',
+				'keywords' => 'Regiomino, Rechnung, Bestellungen, Einkauf, Lebensmittel',
+				'footer' => array(
+					'html' => '&nbsp;',
+				),
+				'header' => array(
+					'html' => '&nbsp;',
+				),
+			));
+			$engweekday = date('l', $params['shipping_option'][3]);
+			$html = '<p style="font-size: xx-large;"><strong>Bestellung ' . $params['order_process_id'] . ' bei ' . $params['sellerprofile']->title . '</strong></p><p style="font-size: x-large;"><strong>Abholung: ' . t($engweekday) . ', ' . date('d.m.Y', $params['shipping_option'][3]) . ', ' . date('H:i', $params['shipping_option'][3]) . ' - ' . date('H:i', $params['shipping_option'][4]) . '<br />von ';
+
+			$shipper = user_load($params['shipping_option'][0]);
+			
+			if($params['shipping_option'][6] == 0) {
+				$shippername = $shipper->field_address[LANGUAGE_NONE][0]['first_name'] . ' ' . $shipper->field_address[LANGUAGE_NONE][0]['last_name'] . ' (Selbstabholer)';
+			}
+			else {
+				$shipperprofile = node_load($shipper->field_profilereference_shipper[LANGUAGE_NONE][0]['target_id']);
+				
+				$phonenumber = '0' . ltrim($shipperprofile->field_privatephone[LANGUAGE_NONE][0]['number'], '0');
+				
+				$shippername = $shipperprofile->title . ' (Lieferant, Tel.: ' . $phonenumber . ')';
+			}
+			
+			$html .= $shippername;
+
+			
+			$html .= '</strong></p>
+			<p style="font-size: large;">Kunde: ' . $params['customer_info']->field_shippingaddress[LANGUAGE_NONE][0]['first_name'] . ' ' . $params['customer_info']->field_shippingaddress[LANGUAGE_NONE][0]['last_name'] . ' (Kundennr.: ' . $params['customer_info']->uid . ')</p>
+						<style>
+						tr.rechnungsposheader th {
+							border-bottom: 0.5px solid #000000;
+							font-weight: bold;
+							font-size: large;
+						}
+						tr.taxes th {
+							border-top: 0.5px solid #92BF20;
+							font-weight: bold;
+						}
+						tr.lastrow td {
+							border-bottom: 0.5px solid #000000;
+						}
+						tr.summary td {
+							font-weight: bold;
+						}
+						table.taxcalc {
+							font-size: small;
+						}
+						td {
+							font-size: large;
+						}
+						td.amountrow {
+							width: 50px;
+						}
+						td.descrow {
+							width: 350px;
+						}
+						th.amountrow {
+							width: 50px;
+						}
+						th.descrow {
+							width: 350px;
+						}
+					</style>
+					<table cellpadding="4">
+						<tr class="rechnungsposheader">
+							<th class="amountrow">Anzahl</th><th class="descrow">Angebot</th>
+						</tr>
+						';
+			
+			foreach($params['products'] as $productkey=>$productvalue) {
+			
+				$html .= '<tr>
+				<td class="amountrow">' . $productvalue['menge'] . ' x ' . $productvalue['einheit_amount'] . ' ' . t($productvalue['einheit_unit']) . '</td><td class="descrow">' . $productvalue['title'] . ' (# ' . $productvalue['nid'] . ')</td>
+				</tr>';
+			}
+						
+						
+						
+			$html .= '</table>
+					<br />
+
+					 
+					<p style="font-size: large;"><strong>Haben Sie Fragen?</strong></p>
+					<p>Bitte kontaktieren Sie uns per Mail unter support@regiomino.de</p>';
+			
+			$tcpdf->writeHTML($html);
+
+			$tcpdf->Output("private://r_sellerincoming_tmp.pdf", "F");
+			$filepath = "private://r_sellerincoming_tmp.pdf";
+			
+			$attachment = array(
+				'filecontent' => file_get_contents($filepath),
+				'filename' => 'NeueBestellungen.pdf',
+				'filemime' => 'application/pdf',
+			);
+			$message['params']['attachments'][] = $attachment;
+
+		break;
+		
+		case 'customer_shippingreminder':
+			watchdog('sales', 'customer_shippingreminder called');
+			$message['subject'] = t('Reminder: tomorrow is Regiomino Day');
+
+			if($params['deliverytype'] == 'bringlivery') {
+				$message['body'][] = t('<p>Dear @customername,</p><p>this is just a quick reminder that your order will be delivered tomorrow between @deliverystart and @deliveryend.</p><p>With best regards,<br />Your Regiomino-Team</p>', array('@customername' => $params['customername'], '@ordernumber' => $params['ordernumber'], '@deliverystart' => $params['deliverystart'], '@deliveryend' => $params['deliveryend']));
+			}
+			else {
+				$message['body'][] = t('<p>Dear @customername,</p><p>this is just a quick reminder that you can pick up your order tomorrow between @pickupstart and @pickupend at @regiominopoint.</p><p>With best regards,<br />Your Regiomino-Team</p>', array('@customername' => $params['customername'], '@ordernumber' => $params['ordernumber'], '@pickupstart' => $params['deliverystart'], '@pickupend' => $params['deliveryend'], '@regiominopoint' => $params['regiominopoint']));
+			}
+			
+			$message['headers'] += $params['headers'];
+		break;
+		
+		case 'seller_shippingreminder':
+			watchdog('sales', 'seller_shippingreminder called');
+			$message['subject'] = t('Reminder: tomorrow is Regiomino Day');
+
+			$message['body'][] = t('<p>Dear @sellername,</p><p>this is just a quick reminder that your shipper will pick up the ordered products tomorrow morning at the agreed time.</p><p>With best regards,<br />Your Regiomino-Team</p>', array('@sellername' => $params['sellername']));
+			
+			$message['headers'] += $params['headers'];
+		break;
+		
+		case 'shipper_shippingreminder':
+			watchdog('sales', 'shipper_shippingreminder called');
+			$message['subject'] = t('Reminder: tomorrow is Regiomino Day');
+
+			$message['body'][] = t('<p>Dear @shippername,</p><p>attached are your pickup and delivery pdfs as well as the seller and customer csv files for your delivery tasks,<br />Your Regiomino-Team</p>', array('@shippername' => $params['shippername']));
+			
+			$message['headers'] += $params['headers'];
+			
+			
+			$attachment = array(
+				'filecontent' => file_get_contents($filepath),
+				'filename' => 'NeueBestellungen.pdf',
+				'filemime' => 'application/pdf',
+			);
+			$message['params']['attachments'] = $params['attachments'];
+		break;
+	}
+}
+
+
+function regiomino_order_thankyou() {
+	if(isset($_REQUEST['hash']) && !empty($_REQUEST['hash']) && isset($_REQUEST['hash2']) && !empty($_REQUEST['hash2'])) {
+		$pw = variable_get('regiomino_payment_novalnet_password', 'eb1e78328c46506b46a4ac4a1e378b91');
+		$result = regiomino_order_novalnet_checkHash($_REQUEST, $pw);
+		watchdog('thankyou', $result);
+	}
+	$output = t('You will now receive an email with your order information as well as payment instructions.');
+	return $output;
+}
+
+function regiomino_order_get_txnfee_currentcart($warenkorb, $currentbalance = 0, $withcart = TRUE) {
+	$txn_fee = 0;
+	
+	//Add cart items to query
+	$valueaddup = 0;
+	$orderaddup = 0;
+	$shipping = 0;
+	foreach($warenkorb as $verkaeuferkey=>$verkaeufervalue) {
+		//Retrieve selected shipping type for use in #default_value key of form element
+		foreach($verkaeufervalue['product'] as $fkey => $fvalue) {
+			//Since shipping is the same for all items of this current seller, it doesn't matter which one we take.
+			//Just loop through all cart item id's and take the last.
+			$my_cart_item_id = $fkey;
+		}
+		//Retrieve shipping type for cart item id from db and write in variable	
+		$shippingoption = $verkaeufervalue['product'][$my_cart_item_id]['shipping_option'];
+		//Select chosen delivery options
+		$shippingoptionarray = explode("-", $shippingoption);
+		$shipping += $shippingoptionarray[5];
+		
+		foreach($verkaeufervalue['product'] as $productkey=>$productvalue) {
+			$nodeobject = node_load($productvalue['nid']);
+			$preis = regiomino_offer_get_discountedprice($nodeobject, FALSE, $withcart);
+			$productvalue['gesamt'] = $productvalue['menge'] * $preis;
+			$valueaddup += $productvalue['gesamt'];
+		}	
+	}
+	
+	$valueaddup += $shipping;
+	$orderaddup += $valueaddup;
+	
+	if($currentbalance > 0) {
+		$orderaddup -= $currentbalance;
+	}
+	$paypalvariablefee = 0.019;
+	$paypalfixedfee = 0.35;
+	$iterationvalue = ($orderaddup * $paypalvariablefee + $paypalfixedfee) * 1.19;
+	$txn_fee = round(regiomino_order_calc_paypal_fee($iterationvalue, 10), 2);
+	
+	$txn_fee = 0;
+
+	return $txn_fee;
+}
+
+function regiomino_order_bamberg_rebate($warenkorb, $userobject) {
+	
+	if(empty($userobject->field_bamberg_rebate[LANGUAGE_NONE][0]['value']) || $userobject->field_bamberg_rebate[LANGUAGE_NONE][0]['value'] == 0) {
+
+		$producttotal = 0;
+		$time = time();
+		foreach($warenkorb as $verkaeuferkey=>$verkaeufervalue) {
+			foreach($verkaeufervalue['product'] as $productkey=>$productvalue) {
+				$producttotal += $productvalue['menge'] * $productvalue['preis_wert'];
+			}	
+		}
+
+		if($producttotal >= 15 && $time <= 1380837599) {				
+		
+			//regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display)
+			$transactionid = regiomino_user_write_points(
+				5,
+				446,
+				$userobject->uid,
+				'Willkommensbonus zum Bamberg Start',
+				'bamberg_rebate',
+				'customer',
+				FALSE
+			);	
+							
+			$userobject->field_bamberg_rebate[LANGUAGE_NONE][0]['value'] = $transactionid;
+			user_save($userobject);
+			drupal_set_message(t('Thank you for your order. The order value of @value qualifies you for the Bamberg rebate. We have added 5€ to your user account which you can spend on your next order.', array('@value' => number_format($producttotal, 2, ",", ".") . ' €')));
+			return TRUE;
+		}
+		else {
+			return FALSE;
+		}
+	}
+	else {
+		return FALSE;
+	}
+}
+
+function regiomino_order_cron() {
+	
+	//CHANGE THIS TO 1
+	$daysahead = 1;
+	
+	$time = time();
+	$month = date('n', $time);
+	$day = date('j', $time);
+	$year = date('Y', $time);
+	
+	$time_from = mktime(20,0,0,$month,$day,$year);
+	$time_to = mktime(20,2,0,$month,$day,$year);
+	
+	$select_time_from = mktime(0,0,0,$month,$day+$daysahead,$year);
+	$select_time_to = mktime(23,59,59,$month,$day+$daysahead,$year);
+	
+	
+	$query = new EntityFieldQuery;
+	$shippingqry = $query
+		->entityCondition('entity_type', 'regiomino_order_shipping')
+		->propertyCondition('shipping_range_from', $select_time_from, '>')
+		->propertyCondition('shipping_range_from', $select_time_to, '<')
+		->propertyCondition('invoice', NULL)
+		->execute();
+		
+	if(isset($shippingqry['regiomino_order_shipping'])) {
+		$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+	}
+	
+	$reminder_customer_array = array();
+	$reminder_seller_array = array();
+	
+	//Add complete order to shipping_items
+	if(isset($shipping_items) && !empty($shipping_items)) {
+		foreach($shipping_items as $shippingid => $shippingvalues) {
+			//Get order items for current shipping id
+			$query = new EntityFieldQuery;
+			$orderqry = $query
+				->entityCondition('entity_type', 'regiomino_order')
+				->propertyCondition('shipping', $shippingid)
+				->propertyCondition('order_status', 'billed', '!=')
+				->propertyCondition('order_status', 'canceled', '!=')
+				->propertyCondition('order_status', 'pending', '!=')
+				->propertyCondition('order_status', 'delivered', '!=')
+				->execute();
+
+			$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+			$order_items_keys = array_keys($order_items);
+			
+			//Fill reminder_customer_array
+			$reminder_customer_array[$order_items[$order_items_keys[0]]->uid][$shippingvalues->shipping_type][$shippingvalues->fci][$shippingvalues->shipping_range_from . '-' . $shippingvalues->shipping_range_to]['email'] = $order_items[$order_items_keys[0]]->primary_email;
+			$reminder_customer_array[$order_items[$order_items_keys[0]]->uid][$shippingvalues->shipping_type][$shippingvalues->fci][$shippingvalues->shipping_range_from . '-' . $shippingvalues->shipping_range_to]['customername'] = $order_items[$order_items_keys[0]]->delivery_first_name . ' ' . $order_items[$order_items_keys[0]]->delivery_last_name;
+			
+			//Fill reminder_seller_array
+			foreach($order_items as $orderid => $ordervalues) {
+				$productnodeobject = node_load($ordervalues->nid);
+				$selleruser = user_load($productnodeobject->uid);
+				$sellerprofile = node_load($selleruser->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+				$reminder_seller_array[$sellerprofile->nid]['title'] = $sellerprofile->title;
+				$reminder_seller_array[$sellerprofile->nid]['email'] = $sellerprofile->field_email[LANGUAGE_NONE][0]['email'];
+			}			
+		}
+	}
+	
+	//CHANGE THIS TO 1
+	$daysahead = 0;
+	
+	$time = time();
+	$month = date('n', $time);
+	$day = date('j', $time);
+	$year = date('Y', $time);
+	
+	$time_from2 = mktime(2,0,0,$month,$day,$year);
+	$time_to2 = mktime(2,2,0,$month,$day,$year);
+	
+	$select_time_from = mktime(0,0,0,$month,$day+$daysahead,$year);
+	$select_time_to = mktime(23,59,59,$month,$day+$daysahead,$year);
+	
+	$query = new EntityFieldQuery;
+	$shippingqry = $query
+		->entityCondition('entity_type', 'regiomino_order_shipping')
+		->propertyCondition('shipping_range_from', $select_time_from, '>')
+		->propertyCondition('shipping_range_from', $select_time_to, '<')
+		->propertyCondition('invoice', NULL)
+		->execute();
+		
+	if(isset($shippingqry['regiomino_order_shipping'])) {
+		$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+	}
+	
+	$reminder_shipper_array = array();
+	
+	//Add complete order to shipping_items
+	if(isset($shipping_items) && !empty($shipping_items)) {
+		foreach($shipping_items as $shippingid => $shippingvalues) {
+			//Get order items for current shipping id
+			$query = new EntityFieldQuery;
+			$orderqry = $query
+				->entityCondition('entity_type', 'regiomino_order')
+				->propertyCondition('shipping', $shippingid)
+				->propertyCondition('order_status', 'billed', '!=')
+				->propertyCondition('order_status', 'canceled', '!=')
+				->propertyCondition('order_status', 'pending', '!=')
+				->propertyCondition('order_status', 'delivered', '!=')
+				->execute();
+
+			$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+			$order_items_keys = array_keys($order_items);
+
+			//Fill reminder_shipper_array
+			$productnodeobject = node_load($order_items[$order_items_keys[0]]->nid);
+			$reminder_shipper_array[$shippingvalues->uid_p]['order_processes'][$order_items[$order_items_keys[0]]->order_process_id] = TRUE;
+			$reminder_shipper_array[$shippingvalues->uid_p]['seller_strings'][$productnodeobject->uid . '_' . strtotime(date('Y-m-d', $shippingvalues->pickup_range_from))] = TRUE;
+			$reminder_shipper_array[$shippingvalues->uid_p]['timestamp'][$shippingvalues->pickup_range_from] = TRUE;			
+		}
+	}
+			
+
+	$email_from = variable_get('site_mail', '');
+	if($time >= $time_from2 && $time < $time_to2) {
+		if(isset($reminder_shipper_array) && !empty($reminder_shipper_array)) {
+			foreach($reminder_shipper_array as $shipperuid => $depth1) {
+				$userobject = user_load($shipperuid);
+				$shipperprofile = node_load($userobject->field_profilereference_shipper[LANGUAGE_NONE][0]['target_id']);
+				$params['shippername'] = $shipperprofile->title;
+				$to = $shipperprofile->field_email[LANGUAGE_NONE][0]['email'];
+				//$to = 'mfrericks@gmail.com';
+				$params['headers'] = array(
+					//'Bcc' => 'system@regiomino.de',
+				);
+				$params['attachments'] = array();
+				foreach($depth1['order_processes'] as $opid => $bool) {
+					$params['attachments'][] = array(
+						'filecontent' => regiomino_shipping_get_assignments_print_delivery($opid, TRUE, $userobject),
+						'filename' => 'LieferungBestellnummer' . $opid . '.pdf',
+						'filemime' => 'application/pdf',
+					);
+				}
+				foreach($depth1['seller_strings'] as $sid => $bool) {
+					$params['attachments'][] = array(
+						'filecontent' => regiomino_shipping_get_assignments_print_pickup($sid, TRUE, $userobject),
+						'filename' => 'AbholungVerkaeufer' . $sid . '.pdf',
+						'filemime' => 'application/pdf',
+					);
+				}
+				foreach($depth1['timestamp'] as $pickuprangefrom => $bool) {
+					$params['attachments'][] = array(
+						'filecontent' => file_get_contents(regiomino_shipping_get_assignments_csvcustomer($pickuprangefrom, TRUE, $userobject)),
+						'filename' => 'KundenCSV_' . date('Y-m-d-H-i') . '.csv',
+						'filemime' => 'application/csv',
+					);
+				}
+				foreach($depth1['timestamp'] as $pickuprangefrom => $bool) {
+					$params['attachments'][] = array(
+						'filecontent' => file_get_contents(regiomino_shipping_get_assignments_csvseller($pickuprangefrom, TRUE, $userobject)),
+						'filename' => 'VerkaeuferCSV_' . date('Y-m-d-H-i') . '.csv',
+						'filemime' => 'application/csv',
+					);
+				}
+				$sent = drupal_mail('regiomino_order', 'shipper_shippingreminder', $to, language_default(), $params, $email_from, TRUE);
+			}
+		}
+	}
+	if($time >= $time_from && $time < $time_to) {
+		if(isset($reminder_seller_array) && !empty($reminder_seller_array)) {
+			foreach($reminder_seller_array as $profileid => $values) {
+				$params['sellername'] = $values['title'];
+				$to = $values['email'];
+				$params['headers'] = array(
+					//'Bcc' => 'system@regiomino.de',
+				);
+				$sent = drupal_mail('regiomino_order', 'seller_shippingreminder', $to, language_default(), $params, $email_from, TRUE);
+			}
+		}
+		if(isset($reminder_customer_array) && !empty($reminder_customer_array)) {
+			foreach($reminder_customer_array as $uid => $depth1) {
+				foreach($depth1 as $shippingtype => $depth2) {
+					$params['deliverytype'] = $shippingtype;
+					foreach($depth2 as $fci => $depth3) {
+						$point = field_collection_item_load($fci);
+						$params['regiominopoint'] = '';
+						if($params['deliverytype'] == 'centralpickup') $params['regiominopoint'] = $point->field_address[LANGUAGE_NONE][0]['name_line'];
+						foreach($depth3 as $shippingrange => $depth4) {	
+							$tmp = explode('-', $shippingrange);
+							$params['deliverystart'] = t("@time o'clock", array('@time' => date('H:i', $tmp[0])));
+							$params['deliveryend'] = t("@time o'clock", array('@time' => date('H:i', $tmp[1])));
+							$to = $depth4['email'];
+							//$to = 'mfrericks@gmail.com';
+							$params['customername'] = $depth4['customername'];			
+							$params['headers'] = array(
+								//'Bcc' => 'system@regiomino.de',
+							);
+							$sent = drupal_mail('regiomino_order', 'customer_shippingreminder', $to, language_default(), $params, $email_from, TRUE);
+						}
+					}
+				}
+			}
+		}		
+	}
+}
+
+function regiomino_order_novalnet_encode($data, $pw) {
+	$data = trim($data);
+	if ($data == '') {
+		return 'Error: no data!';
+	}
+	if (!function_exists('base64_encode') or !function_exists('pack') or !function_exists('crc32')) {
+		return "Error: func 'base64_encode/pack/crc32 n/a'";
+	}
+	try {
+		$crc = sprintf('%u', crc32($data));# %u ist obligatorisch für ccrc32, gibt einen vorzeichenbehafteten Wert zurück
+		$data = $crc."|".$data;
+		$data = bin2hex($data.$pw);
+		$data = strrev(base64_encode($data));
+	}
+	catch (Exception $e){
+		return 'Error: '.$e->getMessage();
+	}
+	return $data;
+}
+
+function regiomino_order_novalnet_decode($data, $pw) {
+	$data = trim($data);
+	if ($data == '') {
+		return 'Error: no data';
+	}
+	if (!function_exists('base64_decode') or !function_exists('pack') or !function_exists('crc32')) {
+		return 'Error: func base64_decode/pack/crc32 n/a';
+	}
+	try {
+		$data = base64_decode(strrev($data));
+		if (!preg_match('/^[0-9a-fA-F]+$/', $data)) {
+			return 'Error: data contains non hexadecimal values!';
+		}
+		$data = pack("H".strlen($data), $data);
+		$data = substr($data, 0, stripos($data, $pw));
+		$pos = strpos($data, "|");
+		if ($pos === false) {
+		return "Error: CKSum not found!";
+		}
+		$crc = substr($data, 0, $pos);
+		$value = trim(substr($data, $pos+1));
+		if ($crc != sprintf('%u', crc32($value))) {
+		return "Error; CKSum invalid!";
+		}
+		return $value;
+	}
+	catch (Exception $e) {
+		return 'Error: '.$e->getMessage();
+	}
+}
+
+function regiomino_order_novalnet_hashIt($h, $pw) {
+	if (!$h) return 'Error: no data';
+	if (!function_exists('md5')) {
+		return 'Error: func md5 n/a';
+	}
+	if (is_array($h)) {
+		return md5($h['auth_code'].$h['product_id'].$h['tariff'].$h['amount'].$h['test_mode'].$h['uniqid'].strrev($pw));
+	}
+	else {
+		return 'Error: $h is not an array!';
+	}
+}
+
+function regiomino_order_novalnet_checkHash($request, $pw) {
+	if (!$request) {
+		return false;
+	}
+	if (is_array($request)){
+		$h['auth_code'] = $request['auth_code'];
+		$h['product_id'] = $request['product'];
+		$h['tariff'] = $request['tariff'];
+		$h['amount'] = $request['amount'];
+		$h['test_mode'] = $request['test_mode'];
+		$h['uniqid'] = $request['uniqid'];
+	}
+	if ($request['hash2'] != regiomino_order_novalnet_hashIt($h, $pw)){
+		return false;
+	}
+	return true;
+}
+
+function regiomino_order_change_status($order_id, $newstatus) {	
+
+	//Store the old order status in variable before changing it
+	$result = db_query('SELECT order_status FROM {regiomino_order} o WHERE o.order_id = :order_id', array(':order_id' => $order_id));
+	foreach($result as $record) {
+		$oldstatus = $record->order_status;
+	}
+	
+	//Change status
+	db_update('regiomino_order')->fields(array('order_status' => $newstatus))->condition('order_id', $order_id)->execute();
+
+	//Prepare serialized array of changes
+	$array = array(
+		'type' => 'status_change',
+		'before' => $oldstatus,
+		'after' => $newstatus
+	);
+	$serialized = serialize($array);
+
+	//Write change to order log
+	global $user;
+	
+	$result = db_query("INSERT INTO {regiomino_order_log} (order_id, uid, changes, created) VALUES (:oid, :uid, :serialized, :time)", array(':oid' => $order_id, ':uid' => $user->uid, ':serialized' => $serialized, ':time' => time()));
+
+}
+
+function regiomino_order_refund_paidprice($order_id) {	
+	//Store the old order status in variable before changing it
+	$result = db_query('SELECT product_price, product_count, uid FROM {regiomino_order} o WHERE o.order_id = :order_id', array(':order_id' => $order_id));
+	foreach($result as $record) {
+		//regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display)
+		$transactionid = regiomino_user_write_points(
+			$record->product_price * $record->product_count,
+			446,
+			$record->uid,
+			t('Cancellation of order item @order_id', array('@order_id' => $order_id)),
+			'cancellation_orderpos_' . $order_id,
+			'customer',
+			FALSE
+		);	
+	}
+}
+
+function regiomino_order_dothis($datainvoice, $datapayment) {
+$data['custom'] = $datainvoice;
+$data['invoice'] = $datainvoice;
+$data['payment_amount'] = $datapayment;
+watchdog('order', 'Payment for order @number received', array('@number' => $data['custom']));						
+						/**
+						 * Write to users userpoints
+						 */
+						 
+						$query = db_query("SELECT uid FROM {regiomino_order} WHERE order_process_id = :process_id AND order_status = :status", array(':process_id' => $data['invoice'], ':status' => 'pending'));
+						
+						$emailquery = db_query("
+							SELECT
+								o.nid,
+								o.uid,
+								o.product_count,
+								o.shipping,
+								o.order_process_id,
+								s.shipping_option,
+								p.field_packingunit_first,
+								p.field_packingunit_second
+							FROM
+								{regiomino_order} o,
+								{regiomino_order_shipping} s,
+								{field_data_field_packingunit} p
+							WHERE
+								o.shipping = s.shipping_id AND
+								order_process_id = :process_id AND
+								order_status = :status AND
+								p.bundle = 'offer' AND
+								o.nid = p.entity_id
+							", array(':process_id' => $data['invoice'], ':status' => 'pending'));
+					
+						$results = $query->fetchObject();
+						
+						if(is_object($results)) {
+							//regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display)
+							$transactionid = regiomino_user_write_points(
+								$data['payment_amount'],
+								446,
+								$results->uid,
+								'PayPal: ' . t('Incoming payment'),
+								'incoming_payment_' . $data['invoice'],
+								'customer',
+								FALSE
+							);		
+							
+							//Update order table
+							$allorderids = db_query('SELECT order_id FROM {regiomino_order} o WHERE o.order_process_id = :order_process_id', array(':order_process_id' => $data['invoice']));
+							foreach($allorderids as $allorderidsrecord) {
+								regiomino_order_change_status($allorderidsrecord->order_id, 'completed');
+							}
+						}
+						
+						//Hier müssen Bestellbestätigungen und Faxe an Verkäufer rausgehen
+						
+
+						$structuredarray = array();
+						foreach($emailquery as $record) {
+							$offernodeobject = node_load($record->nid);
+							$customerobject = user_load($record->uid);
+							$seller_user = user_load($offernodeobject->uid);
+							$seller_profile = node_load($seller_user->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+							$structuredarray[$record->uid][$record->shipping]['sellerprofile'] = $seller_profile;
+							$structuredarray[$record->uid][$record->shipping]['products'][$record->nid]['offerobject'] = $offernodeobject;
+							$structuredarray[$record->uid][$record->shipping]['products'][$record->nid]['quantity'] = $record->product_count;
+							$structuredarray[$record->uid][$record->shipping]['products'][$record->nid]['amount'] = $record->field_packingunit_first;
+							$structuredarray[$record->uid][$record->shipping]['products'][$record->nid]['unit'] = $record->field_packingunit_second;
+							$structuredarray[$record->uid][$record->shipping]['shipping']['shipping_option'] = explode('-', $record->shipping_option);
+							$structuredarray[$record->uid][$record->shipping]['order_process_id'] = $record->order_process_id;
+							$structuredarray[$record->uid][$record->shipping]['customerprofile'] = $customerobject;
+						}
+
+						foreach($structuredarray as $key=>$value) {
+							foreach($value as $key2 => $value2) {
+								//Send one email per loop
+								$params = array();
+								$countthis = 0;
+								foreach($value2['products'] as $key3=>$value3) {
+									$params['products'][$countthis]['title'] = $value3['offerobject']->title;
+									$params['products'][$countthis]['menge'] = $value3['quantity'];
+									$params['products'][$countthis]['einheit_amount'] = $value3['amount'];
+									$params['products'][$countthis]['einheit_unit'] = $value3['unit'];
+									$params['products'][$countthis]['nid'] = $key3;
+									$countthis++;
+								}
+								$params['sellerprofile'] = $value2['sellerprofile'];
+								$params['headers'] = array(
+									//'Bcc' => 'system@regiomino.de',
+								);
+								$params['shipping_option'] = $value2['shipping']['shipping_option'];
+								$params['customer_info'] = $value2['customerprofile'];
+								$params['order_process_id'] = $value2['order_process_id'];
+								$to = $value2['sellerprofile']->field_email[LANGUAGE_NONE][0]['email'];
+								//$to = 'mfrericks@gmail.com';
+								$email_from = variable_get('site_mail', '');
+								$sent = drupal_mail('regiomino_order', 'seller_orderconfirmation', $to, language_default(), $params, $email_from, TRUE);
+								if(isset($value2['sellerprofile']->field_publicfax[LANGUAGE_NONE][0]['number']) && !empty($value2['sellerprofile']->field_publicfax[LANGUAGE_NONE][0]['number'])) {
+									$faxnumber = '0' . ltrim($value2['sellerprofile']->field_publicfax[LANGUAGE_NONE][0]['number'], '0');
+									$to = $faxnumber . '@simple-fax.de';
+									$sent = drupal_mail('regiomino_order', 'seller_orderconfirmation_fax', $to, language_default(), $params, $email_from, TRUE);
+								}
+							}
+						}
+						
+						
+						
+						
+						return TRUE;
+
+}

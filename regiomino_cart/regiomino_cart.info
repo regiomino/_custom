@@ -1,0 +1,7 @@
+name = Regiomino Cart
+description = Regiomino Shopping cart functionality
+core = 7.x
+package = Regiomino
+configure = admin/config/regiomino/cart
+files[] = regiomino_cart.module
+files[] = regiomino_cart.install

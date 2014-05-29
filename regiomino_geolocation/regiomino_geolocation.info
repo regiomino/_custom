@@ -1,0 +1,5 @@
+name = Regiomino Geolocation
+description = Handles Regiomino specific geolocation functionality
+core = 7.x
+package = Regiomino
+files[] = regiomino_geolocation.module

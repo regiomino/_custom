@@ -1,0 +1,2447 @@
+<?php
+
+function regiomino_shipping_menu() {
+
+  $items['admin/pointassignments'] = array(
+    'title' => 'Point Assignments',
+    'page callback' => 'regiomino_shipping_get_assignments_point_pickup',
+    'access callback' => 'regiomino_shipping_assignment_point_access',
+    'type' => MENU_NORMAL_ITEM,
+  );
+	
+	$items['admin/pointassignments/sortedfordelivery'] = array(
+    'title' => 'Sorted for delivery',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => 0,
+  );
+	
+	$items['admin/pointassignments/setdelivered'] = array(
+    'title' => 'Set assignments to delivered',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('regiomino_shipping_set_assignments_point_delivered_form'),
+    'access callback' => 'regiomino_shipping_assignment_point_access',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 2,
+  );
+	
+  $items['admin/pointassignments/%/print'] = array(
+    'title' => 'Point Assignments',
+    'page callback' => 'regiomino_shipping_get_assignments_point_print_pickup',
+    'page arguments' => array(2),
+    'access callback' => 'regiomino_shipping_assignment_point_print_access',
+    'access arguments' => array(2),
+  );
+
+  $items['admin/shippingassignments'] = array(
+    'title' => 'Shipping Assignments',
+    'page callback' => 'regiomino_shipping_get_assignments_pickup',
+    'access callback' => 'regiomino_shipping_assignment_access',
+    'type' => MENU_NORMAL_ITEM,
+  );
+	
+  $items['admin/shippingassignments/sortedforpickup'] = array(
+    'title' => 'Sorted for pickup',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => 0,
+  );
+	
+  $items['admin/shippingassignments/sortedforpickup/%/print'] = array(
+    'title' => 'Point Assignments',
+    'page callback' => 'regiomino_shipping_get_assignments_print_pickup',
+    'page arguments' => array(3),
+    'access callback' => 'regiomino_shipping_assignment_pickup_print_access',
+    'access arguments' => array(3),
+  );
+
+  $items['admin/shippingassignments/sortedfordelivery'] = array(
+    'title' => 'Sorted for delivery',
+    'page callback' => 'regiomino_shipping_get_assignments_delivery',
+    'access callback' => 'regiomino_shipping_assignment_access',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 1,
+  );
+	
+  $items['admin/shippingassignments/%/csvseller'] = array(
+    'title' => 'CSV Seller',
+    'page callback' => 'regiomino_shipping_get_assignments_csvseller',
+    'page arguments' => array(2),
+    'access callback' => 'regiomino_shipping_assignment_access',
+  );
+	
+  $items['admin/shippingassignments/%/csvcustomer'] = array(
+    'title' => 'CSV Seller',
+    'page callback' => 'regiomino_shipping_get_assignments_csvcustomer',
+    'page arguments' => array(2),
+    'access callback' => 'regiomino_shipping_assignment_access',
+  );
+	
+  $items['admin/shippingassignments/setdelivered'] = array(
+    'title' => 'Set assignments to delivered',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('regiomino_shipping_set_assignments_delivered_form'),
+    'access callback' => 'regiomino_shipping_assignment_access',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 2,
+  );
+	
+  $items['admin/shippingassignments/sortedfordelivery/%/print'] = array(
+    'title' => 'Point Assignments',
+    'page callback' => 'regiomino_shipping_get_assignments_print_delivery',
+    'page arguments' => array(3),
+    'access callback' => 'regiomino_shipping_assignment_delivery_print_access',
+    'access arguments' => array(3),
+  );
+	
+	return $items;
+}
+
+function regiomino_shipping_is_holiday($tag, $monat, $jahr) {
+
+   // Parameter in richtiges Format bringen
+   if(strlen($tag) == 1) {
+      $tag = "0$tag";
+   }
+   if(strlen($monat) == 1) {
+      $monat = "0$monat";
+   }
+
+   // Wochentag berechnen
+   $datum = getdate(mktime(0, 0, 0, $monat, $tag, $jahr));
+   $wochentag = $datum['wday'];
+
+   // Prüfen, ob Wochenende
+   if($wochentag == 0 || $wochentag == 6) {
+      return true;
+   }
+
+   // Feste Feiertage werden nach dem Schema ddmm eingetragen
+   $feiertage[] = "0101"; // Neujahrstag
+   $feiertage[] = "0105"; // Tag der Arbeit
+   $feiertage[] = "0310"; // Tag der Deutschen Einheit
+   $feiertage[] = "2512"; // Erster Weihnachtstag
+   $feiertage[] = "2612"; // Zweiter Weihnachtstag
+
+   // Bewegliche Feiertage berechnen
+   $tage = 60 * 60 * 24;
+   $ostersonntag = easter_date($jahr);
+   $feiertage[] = date("dm", $ostersonntag - 2 * $tage);  // Karfreitag
+   $feiertage[] = date("dm", $ostersonntag + 1 * $tage);  // Ostermontag
+   $feiertage[] = date("dm", $ostersonntag + 39 * $tage); // Himmelfahrt
+   $feiertage[] = date("dm", $ostersonntag + 50 * $tage); // Pfingstmontag
+
+   // Prüfen, ob Feiertag
+   $code = $tag.$monat;
+   if(in_array($code, $feiertage)) {
+      return true;
+   } else {
+      return false;
+   }
+}
+
+function regiomino_shipping_get_assignments_csvseller($timestamp, $return = FALSE, $account = NULL) {
+	if(is_null($account)) {
+		global $user;
+		$account = user_load($user->uid);
+	}
+	$query = new EntityFieldQuery;
+	$shippingqry = $query
+		->entityCondition('entity_type', 'regiomino_order_shipping')
+		->propertyCondition('uid_p', $account->uid)
+		->propertyCondition('invoice', NULL)
+		->propertyCondition('pickup_range_from', $timestamp)
+		->execute();
+	$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+	$sellerobject = array();
+	foreach($shipping_items as $shippingid => $shippingvalues) {
+		//Get order items for current shipping id
+		$query = new EntityFieldQuery;
+		$orderqry = $query
+			->entityCondition('entity_type', 'regiomino_order')
+			->propertyCondition('shipping', $shippingid)
+			->propertyCondition('order_status', 'billed', '!=')
+			->propertyCondition('order_status', 'canceled', '!=')
+			->propertyCondition('order_status', 'pending', '!=')
+			->propertyCondition('order_status', 'delivered', '!=')
+			->execute();
+		$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+
+		foreach($order_items as $orderid => $ordervalues) {
+			$productnodeobject = node_load($ordervalues->nid);
+			$selleruser = user_load($productnodeobject->uid);
+			$sellerprofile = node_load($selleruser->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+			$sellerobject[$sellerprofile->nid]['profile'] = $sellerprofile;
+			$sellerobject[$sellerprofile->nid]['orders'][$ordervalues->order_process_id] = TRUE; 
+		}
+	}
+	$csvoutput = array();
+	
+	foreach($sellerobject as $key => $value) {
+		$sellername = $value['profile']->title;
+		
+		$handlers = array('address' => 'address');
+		$context = array('mode' => 'render'); 
+		$address_render_array = addressfield_generate($value['profile']->field_address[LANGUAGE_NONE][0], $handlers, $context);
+		$selleraddress = drupal_render($address_render_array);
+		$ordernumbers = 'Bstl#: ';
+		$counter = 0;
+		foreach($value['orders'] as $order_process_id=>$bool) {
+			if(strlen($ordernumbers) > 7) $ordernumbers .= ', ';
+			$ordernumbers .= $order_process_id;
+			$counter++;
+		}
+		
+		$csvoutput[] = array($sellername,$value['profile']->field_address[LANGUAGE_NONE][0]['thoroughfare'],$value['profile']->field_address[LANGUAGE_NONE][0]['premise'],$value['profile']->field_address[LANGUAGE_NONE][0]['postal_code'], $value['profile']->field_address[LANGUAGE_NONE][0]['locality'], $counter, $ordernumbers);
+	}
+	
+	if($return) {
+		return regiomino_shipping_array_to_csv_download($csvoutput, 'VerkaeuferCSV_' . date('Y-m-d-H-i') . '.csv', ";", $return);
+	}
+	else {
+		regiomino_shipping_array_to_csv_download($csvoutput, 'VerkaeuferCSV_' . date('Y-m-d-H-i') . '.csv', ";", $return);
+		return NULL;
+	}
+}
+
+function regiomino_shipping_get_assignments_csvcustomer($timestamp, $return = FALSE, $account = NULL) {
+	if(is_null($account)) {
+		global $user;
+		$account = user_load($user->uid);
+	}
+	$query = new EntityFieldQuery;
+	$shippingqry = $query
+		->entityCondition('entity_type', 'regiomino_order_shipping')
+		->propertyCondition('uid_p', $account->uid)
+		->propertyCondition('invoice', NULL)
+		->propertyCondition('pickup_range_from', $timestamp)
+		->execute();
+	$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+	$customerobject = array();
+	foreach($shipping_items as $shippingid => $shippingvalues) {
+		//Get order items for current shipping id
+		$query = new EntityFieldQuery;
+		$orderqry = $query
+			->entityCondition('entity_type', 'regiomino_order')
+			->propertyCondition('shipping', $shippingid)
+			->propertyCondition('order_status', 'billed', '!=')
+			->propertyCondition('order_status', 'canceled', '!=')
+			->propertyCondition('order_status', 'pending', '!=')
+			->propertyCondition('order_status', 'delivered', '!=')
+			->execute();
+		$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+
+		foreach($order_items as $orderid => $ordervalues) {
+			if(isset($customerobject[$ordervalues->uid]['ordernumbers']) && strlen($customerobject[$ordervalues->uid]['ordernumbers']) > 0) {
+				$customerobject[$ordervalues->uid]['ordernumbers'] .= ', ' . $ordervalues->order_process_id;
+				$customerobject[$ordervalues->uid]['counter']++;
+			}
+			else {
+				$customerobject[$ordervalues->uid]['ordernumbers'] = $ordervalues->order_process_id;
+				$customerobject[$ordervalues->uid]['counter'] = 1;
+			}
+			if($shippingvalues->shipping_type == 'bringlivery') {
+				$customerobject[$ordervalues->uid]['address']['name'] = $ordervalues->delivery_first_name . ' ' . $ordervalues->delivery_last_name;
+				$customerobject[$ordervalues->uid]['address']['thoroughfare'] = $ordervalues->delivery_street1;
+				$customerobject[$ordervalues->uid]['address']['premise'] = $ordervalues->delivery_street2;
+				$customerobject[$ordervalues->uid]['address']['postal_code'] = $ordervalues->delivery_postal_code;
+				$customerobject[$ordervalues->uid]['address']['locality'] = $ordervalues->delivery_city;
+			}
+			else {
+				$point = field_collection_item_load($shippingvalues->fci);
+				$customerobject[$ordervalues->uid]['address']['name'] = 'RM Point ' . $point->field_address[LANGUAGE_NONE][0]['name_line'] . ' (' . $ordervalues->delivery_first_name . ' ' . $ordervalues->delivery_last_name . ')';
+				$customerobject[$ordervalues->uid]['address']['thoroughfare'] = $point->field_address[LANGUAGE_NONE][0]['thoroughfare'];
+				$customerobject[$ordervalues->uid]['address']['premise'] = $point->field_address[LANGUAGE_NONE][0]['premise'];
+				$customerobject[$ordervalues->uid]['address']['postal_code'] = $point->field_address[LANGUAGE_NONE][0]['postal_code'];
+				$customerobject[$ordervalues->uid]['address']['locality'] = $point->field_address[LANGUAGE_NONE][0]['locality'];
+			}
+		}
+	}
+	$csvoutput = array();
+	
+	foreach($customerobject as $key => $value) {
+		$counter = $value['counter'];
+		$ordernumbers = 'Bstl#: ' . $value['ordernumbers'];
+		
+		$csvoutput[] = array($value['address']['name'],$value['address']['thoroughfare'],$value['address']['premise'],$value['address']['postal_code'], $value['address']['locality'], $counter, $ordernumbers);
+	}
+
+	if($return) {
+		return regiomino_shipping_array_to_csv_download($csvoutput, 'KundenCSV_' . date('Y-m-d-H-i') . '.csv', ";", $return);
+	}
+	else {
+		regiomino_shipping_array_to_csv_download($csvoutput, 'KundenCSV_' . date('Y-m-d-H-i') . '.csv', ";", $return);
+		return NULL;
+	}
+}
+
+function regiomino_shipping_array_to_csv_download($array, $filename = "export.csv", $delimiter=";", $return = FALSE) {
+	if($return) {
+		$time = time();
+		$filepath = 'private://' . $time . '.csv';
+		$f = fopen($filepath, 'w');
+		foreach ($array as $line) {
+			fputcsv($f, $line, $delimiter);
+		}
+		fclose($f);
+		return $filepath;
+	}
+	else {
+		header('Content-Type: application/csv');
+		header('Content-Disposition: attachement; filename="'.$filename.'";');
+		$f = fopen('php://output', 'w');
+		foreach ($array as $line) {
+			fputcsv($f, $line, $delimiter);
+		}
+	}
+} 
+
+function regiomino_shipping_set_assignments_delivered_form($form, &$form_state) {
+	global $user;
+	$account = user_load($user->uid);
+	//$account = $form_state['build_info']['args'][0];
+	//Retrieve undelivered shipping assignments and offer them for selection through form		
+	$query = new EntityFieldQuery;
+	$shippingqry = $query
+		->entityCondition('entity_type', 'regiomino_order_shipping')
+		->propertyCondition('uid_p', $account->uid)
+		->propertyCondition('invoice', NULL)
+		->execute();
+	$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+	//Generate final array
+	$finalarray = array();
+	$descarray = array();
+	foreach($shipping_items as $shippingid => $shippingvalues) {
+		//Get order items for current shipping id
+		$query = new EntityFieldQuery;
+		$orderqry = $query
+			->entityCondition('entity_type', 'regiomino_order')
+			->propertyCondition('shipping', $shippingid)
+			->propertyCondition('order_status', 'billed', '!=')
+			->propertyCondition('order_status', 'canceled', '!=')
+			->propertyCondition('order_status', 'pending', '!=')
+			->propertyCondition('order_status', 'delivered', '!=')
+			->propertyCondition('order_status', 'processing', '!=')
+			->execute();
+		$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+		foreach($order_items as $order_id=>$order_values) {			
+			if($shippingvalues->shipping_type == 'bringlivery') {
+				$finalarray[$shippingvalues->shipping_range_from][$order_values->order_id]['opid'] = $order_values->order_process_id;
+				$finalarray[$shippingvalues->shipping_range_from][$order_values->order_id]['nid'] = $order_values->nid;
+				$nodeobject = node_load($order_values->nid);
+				$finalarray[$shippingvalues->shipping_range_from][$order_values->order_id]['title'] = $nodeobject->title;
+				$finalarray[$shippingvalues->shipping_range_from][$order_values->order_id]['amount'] = $order_values->product_count . ' x ' . $nodeobject->field_packingunit[LANGUAGE_NONE][0]['first'] . ' ' . t($nodeobject->field_packingunit[LANGUAGE_NONE][0]['second']);
+				$finalarray[$shippingvalues->shipping_range_from][$order_values->order_id]['seller'] = $order_values->seller_company . ' (' . $order_values->seller_city . ')';
+				$finalarray[$shippingvalues->shipping_range_from][$order_values->order_id]['recipient'] = $order_values->delivery_first_name . ' ' . $order_values->delivery_last_name . ' (' . $order_values->delivery_city . ')';
+				$finalarray[$shippingvalues->shipping_range_from][$order_values->order_id]['delivery'] = date('d.m.Y H:i', $shippingvalues->shipping_range_from) . ' - ' . date('H:i', $shippingvalues->shipping_range_to);
+			}
+			else {
+				$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['opid'] = $order_values->order_process_id;
+				$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['nid'] = $order_values->nid;
+				$nodeobject = node_load($order_values->nid);
+				$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['title'] = $nodeobject->title;
+				$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['amount'] = $order_values->product_count . ' x ' . $nodeobject->field_packingunit[LANGUAGE_NONE][0]['first'] . ' ' . t($nodeobject->field_packingunit[LANGUAGE_NONE][0]['second']);
+				$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['seller'] = $order_values->seller_company . ' (' . $order_values->seller_city . ')';
+				$recipient = field_collection_item_load($shippingvalues->fci);
+				$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['recipient'] = 'RM Point ' . $recipient->field_address[LANGUAGE_NONE][0]['name_line'] . ' (' . $recipient->field_address[LANGUAGE_NONE][0]['locality'] . ') -> ' . $order_values->delivery_first_name . ' ' . $order_values->delivery_last_name;
+				$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['delivery'] = date('d.m.Y H:i', $shippingvalues->pickup_range_from) . ' - ' . date('H:i', $shippingvalues->pickup_range_to);
+			}
+		}
+	}
+	ksort($finalarray);
+	$form = array();
+	$header = array(
+		'opid' => 'Bstl.#',
+		'nid' => 'Art.#',
+		'title' => t('Title'),
+		'amount' => t('Amount'),
+		'recipient' => t('Recipient'),
+		'seller' => t('Seller'),
+		'delivery' => t('Delivery'),
+	);
+	foreach($finalarray as $shipping => $options) {
+		$form['orders']['order_ids_' . $shipping] = array(
+      '#type' => 'tableselect',
+      '#header' => $header,
+      '#options' => $options,
+      '#empty' => t('No content available.'),
+    );
+		$form['orders']['order_ids_' . $shipping] = array(
+      '#type' => 'tableselect',
+      '#header' => $header,
+      '#options' => $options,
+      '#empty' => t('No content available.'),
+    );
+	}
+  $form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => t('Set selected assignments to delivered'),
+	);
+  return $form;
+}
+
+function regiomino_shipping_set_assignments_delivered_form_submit(&$form, &$form_state) {
+
+	//Retrieve selected shipping ids from $form_state
+	foreach($form_state['values'] as $key=>$value) {
+		$pos = strpos($key, 'order_ids_');
+		if ($pos !== false) {
+			foreach($value as $order_id) {
+				if($order_id) $order_ids[] = $order_id;
+			}
+		}
+	}
+	batch_set(regiomino_shipping_set_assignments_delivered_build_batch($order_ids));
+}
+
+function regiomino_shipping_set_assignments_delivered_build_batch($order_ids) {
+
+  $operations = array();
+  foreach($order_ids as $key=>$order_id) {
+    $operations[] = array(
+      'regiomino_shipping_set_assignments_delivered_op', array($order_id),
+    );
+  }
+  $batch = array(
+    'operations' => $operations,
+    'finished' => 'regiomino_shipping_set_assignments_delivered_finished',
+  );
+  return $batch;
+}
+
+function regiomino_shipping_set_assignments_delivered_op($order_id, &$context) {
+	//Set shipping assignment with order_id to delivered
+	$order_item = entity_load('regiomino_order', array($order_id));
+	$order_item_key = array_keys($order_item);
+	$shipping_id = $order_item[$order_item_key[0]]->shipping;
+	$shipping_item = entity_load('regiomino_order_shipping', array($shipping_id));
+	$shipping_item_key = array_keys($shipping_item);
+	$shipping_type = $shipping_item[$shipping_item_key[0]]->shipping_type;
+	if($shipping_type == 'centralpickup') {
+		regiomino_order_change_status($order_id, 'processing');
+	}
+	else {
+		regiomino_order_change_status($order_id, 'delivered');
+	}
+}
+
+
+function regiomino_shipping_set_assignments_delivered_finished($success, $results, $operations) {
+  drupal_set_message(t('The selected shipping assignments have been processed'), 'status');
+}
+
+
+function regiomino_shipping_set_assignments_point_delivered_form($form, &$form_state) {
+	global $user;
+	$account = user_load($user->uid);
+	//$account = $form_state['build_info']['args'][0];
+	//Retrieve undelivered shipping assignments and offer them for selection through form		
+	$query = new EntityFieldQuery;
+	$shippingqry = $query
+		->entityCondition('entity_type', 'regiomino_order_shipping')
+		->propertyCondition('shipping_type', 'centralpickup')
+		->propertyCondition('uid', $account->uid)
+		->propertyCondition('invoice', NULL)
+		->execute();
+	$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+	//Generate final array
+	$finalarray = array();
+	$descarray = array();
+	foreach($shipping_items as $shippingid => $shippingvalues) {
+		//Get order items for current shipping id
+		$query = new EntityFieldQuery;
+		$orderqry = $query
+			->entityCondition('entity_type', 'regiomino_order')
+			->propertyCondition('shipping', $shippingid)
+			->propertyCondition('order_status', 'billed', '!=')
+			->propertyCondition('order_status', 'canceled', '!=')
+			->propertyCondition('order_status', 'pending', '!=')
+			->propertyCondition('order_status', 'delivered', '!=')
+			->execute();
+		$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+		foreach($order_items as $order_id=>$order_values) {			
+			$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['opid'] = $order_values->order_process_id;
+			$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['nid'] = $order_values->nid;
+			$nodeobject = node_load($order_values->nid);
+			$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['title'] = $nodeobject->title;
+			$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['amount'] = $order_values->product_count . ' x ' . $nodeobject->field_packingunit[LANGUAGE_NONE][0]['first'] . ' ' . t($nodeobject->field_packingunit[LANGUAGE_NONE][0]['second']);
+			$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['seller'] = $order_values->seller_company . ' (' . $order_values->seller_city . ')';
+			$recipient = field_collection_item_load($shippingvalues->fci);
+			$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['recipient'] = 'RM Point ' . $recipient->field_address[LANGUAGE_NONE][0]['name_line'] . ' (' . $recipient->field_address[LANGUAGE_NONE][0]['locality'] . ') -> ' . $order_values->delivery_first_name . ' ' . $order_values->delivery_last_name;
+			$finalarray[$shippingvalues->pickup_range_from][$order_values->order_id]['delivery'] = date('d.m.Y H:i', $shippingvalues->pickup_range_from) . ' - ' . date('H:i', $shippingvalues->pickup_range_to);
+		}
+	}
+	ksort($finalarray);
+	$form = array();
+	$header = array(
+		'opid' => 'Bstl.#',
+		'nid' => 'Art.#',
+		'title' => t('Title'),
+		'amount' => t('Amount'),
+		'recipient' => t('Recipient'),
+		'seller' => t('Seller'),
+		'delivery' => t('Delivery'),
+	);
+	foreach($finalarray as $shipping => $options) {
+		$form['orders']['order_ids_' . $shipping] = array(
+      '#type' => 'tableselect',
+      '#header' => $header,
+      '#options' => $options,
+      '#empty' => t('No content available.'),
+    );
+		$form['orders']['order_ids_' . $shipping] = array(
+      '#type' => 'tableselect',
+      '#header' => $header,
+      '#options' => $options,
+      '#empty' => t('No content available.'),
+    );
+	}
+  $form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => t('Set selected assignments to delivered'),
+	);
+  return $form;
+}
+
+function regiomino_shipping_set_assignments_point_delivered_form_submit(&$form, &$form_state) {
+
+	//Retrieve selected shipping ids from $form_state
+	foreach($form_state['values'] as $key=>$value) {
+		$pos = strpos($key, 'order_ids_');
+		if ($pos !== false) {
+			foreach($value as $order_id) {
+				if($order_id) $order_ids[] = $order_id;
+			}
+		}
+	}
+	batch_set(regiomino_shipping_set_assignments_point_delivered_build_batch($order_ids));
+}
+
+function regiomino_shipping_set_assignments_point_delivered_build_batch($order_ids) {
+
+  $operations = array();
+  foreach($order_ids as $key=>$order_id) {
+    $operations[] = array(
+      'regiomino_shipping_set_assignments_point_delivered_op', array($order_id),
+    );
+  }
+  $batch = array(
+    'operations' => $operations,
+    'finished' => 'regiomino_shipping_set_assignments_point_delivered_finished',
+  );
+  return $batch;
+}
+
+function regiomino_shipping_set_assignments_point_delivered_op($order_id, &$context) {
+	regiomino_order_change_status($order_id, 'delivered');
+}
+
+
+function regiomino_shipping_set_assignments_point_delivered_finished($success, $results, $operations) {
+  drupal_set_message(t('The selected shipping assignments have been processed'), 'status');
+}
+
+
+
+
+
+
+
+
+
+
+
+
+function regiomino_shipping_assignment_access() {
+	global $user;
+	$account = user_load($user->uid);
+	return in_array('Lieferant', $account->roles) ? TRUE : FALSE;
+}
+
+function regiomino_shipping_assignment_delivery_print_access($opid) {
+	global $user;
+	$account = user_load($user->uid);
+
+	$return = &drupal_static(__FUNCTION__);
+
+	if(!isset($return)) {
+		$role = FALSE;
+		$process = FALSE;
+		
+		if(in_array('Lieferant', $account->roles)) $role = TRUE;
+
+		
+		
+		//Get shipping assignments for current user
+		$query = new EntityFieldQuery;
+		$shippingqry = $query
+			->entityCondition('entity_type', 'regiomino_order_shipping')
+			->propertyCondition('uid_p', $account->uid)
+			//->propertyCondition('shipping_type', 'bringlivery')
+			//->propertyCondition('uid', 1254)
+			//->propertyCondition('invoice', NULL)
+			//->propertyCondition('invoice_sale', NULL)
+			->execute();
+
+		$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+
+		//Add complete order to shipping_items
+		foreach($shipping_items as $shippingid => $shippingvalues) {
+			//Get order items for current shipping id
+			$query = new EntityFieldQuery;
+			$orderqry = $query
+				->entityCondition('entity_type', 'regiomino_order')
+				->propertyCondition('shipping', $shippingid)
+				->execute();
+
+			$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+
+			foreach($order_items as $orderid => $ordervalues) {
+				if($ordervalues->order_process_id == $opid) $process = TRUE;
+			}
+		}
+
+		if($process && $role) {
+			$return = TRUE;
+		}
+		else {
+			$return = FALSE;
+		}
+	}
+
+	return $return;
+}
+
+function regiomino_shipping_assignment_pickup_print_access($sid) {
+	global $user;
+	$account = user_load($user->uid);
+
+	$return = &drupal_static(__FUNCTION__);
+
+	$tmp = explode('_', $sid);
+	$sid = $tmp[0];
+
+	if(!isset($return)) {
+		$role = FALSE;
+		$process = FALSE;
+
+		if(in_array('Lieferant', $account->roles)) $role = TRUE;
+
+		//Get shipping assignments for current user
+		$query = new EntityFieldQuery;
+		$shippingqry = $query
+			->entityCondition('entity_type', 'regiomino_order_shipping')
+			->propertyCondition('uid_p', $account->uid)
+			//->propertyCondition('shipping_type', 'bringlivery')
+			//->propertyCondition('uid', 1254)
+			//->propertyCondition('invoice', NULL)
+			//->propertyCondition('invoice_sale', NULL)
+			->execute();
+
+		$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+
+		$query = new EntityFieldQuery;
+		$productqry = $query
+			->entityCondition('entity_type', 'node')
+			->propertyCondition('uid', $sid)
+			->propertyCondition('type', 'offer')
+			//->propertyCondition('shipping_type', 'bringlivery')
+			//->propertyCondition('uid', 1254)
+			//->propertyCondition('invoice', NULL)
+			//->propertyCondition('invoice_sale', NULL)
+			->execute();
+
+		//Add complete order to shipping_items
+		foreach($shipping_items as $shippingid => $shippingvalues) {
+			//Get order items for current shipping id
+			$query = new EntityFieldQuery;
+			$orderqry = $query
+				->entityCondition('entity_type', 'regiomino_order')
+				->propertyCondition('shipping', $shippingid)
+				->execute();
+
+			$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+
+			foreach($order_items as $orderid => $ordervalues) {
+				if(in_array($ordervalues->nid, array_keys($productqry['node']))) $process = TRUE;
+			}
+		}
+
+		if($process && $role) {
+			$return = TRUE;
+		}
+		else {
+			$return = FALSE;
+		}
+	}
+
+	return $return;
+}
+
+function regiomino_shipping_assignment_point_access() {
+	global $user;
+	$account = user_load($user->uid);
+	return in_array('Point Betreiber', $account->roles) ? TRUE : FALSE;
+}
+
+function regiomino_shipping_assignment_point_print_access($opid) {
+	global $user;
+	$account = user_load($user->uid);
+
+	$return = &drupal_static(__FUNCTION__);
+
+	if(!isset($return)) {
+		$role = FALSE;
+		$process = FALSE;
+		
+		if(in_array('Point Betreiber', $account->roles)) $role = TRUE;
+
+		//Get shipping assignments for current user
+		$query = new EntityFieldQuery;
+		$shippingqry = $query
+			->entityCondition('entity_type', 'regiomino_order_shipping')
+			->propertyCondition('uid', $account->uid)
+			->propertyCondition('shipping_type', 'centralpickup')
+			//->propertyCondition('uid', 1254)
+			//->propertyCondition('invoice', NULL)
+			//->propertyCondition('invoice_sale', NULL)
+			->execute();
+
+		$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+
+		//Add complete order to shipping_items
+		foreach($shipping_items as $shippingid => $shippingvalues) {
+			//Get order items for current shipping id
+			$query = new EntityFieldQuery;
+			$orderqry = $query
+				->entityCondition('entity_type', 'regiomino_order')
+				->propertyCondition('shipping', $shippingid)
+				->execute();
+
+			$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+				
+			foreach($order_items as $orderid => $ordervalues) {
+				if($ordervalues->order_process_id == $opid) $process = TRUE;
+			}
+		}
+		if($process && $role) {
+			$return = TRUE;
+		}
+		else {
+			$return = FALSE;
+		}
+	}
+
+	return $return;
+}
+
+function regiomino_shipping_theme($existing, $type, $theme, $path) {
+	return array(
+		'regiomino_shipping_theme_assignments_pickup' => array(
+			'template' => 'regiomino_shipping_assignments_pickup',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_shipping_theme_assignments_delivery' => array(
+			'template' => 'regiomino_shipping_assignments_delivery',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+/* 		'regiomino_shipping_theme_assignments_point_supply' => array(
+			'template' => 'regiomino_shipping_assignments_point_supply',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		), */
+		'regiomino_shipping_theme_assignments_point_pickup' => array(
+			'template' => 'regiomino_shipping_assignments_point_pickup',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+	);
+}
+
+function regiomino_shipping_get_assignments_print_delivery($opid, $return = FALSE, $account = NULL) {
+	if(is_null($account)) {
+		global $user;
+		$account = user_load($user->uid);
+	}
+  // Never make an instance of TCPDF or TCPDFDrupal classes manually.
+  // Use tcpdf_get_instance() instead.
+	$tcpdf_params = array(
+    'unicode' => TRUE,
+    'encoding' => 'UTF-8',
+  );
+  // TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+  $tcpdf_class = array(
+    'class' => 'TCPDFRegiomino',
+    'filetype' => 'inc',
+    'filename' => 'regiomino_invoice.class',
+    'module' => 'regiomino_invoice',
+  );
+  // regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+  $tcpdf_config = array(
+    'filetype' => 'inc',
+    'filename' => 'regiomino_invoice.config',
+    'module' => 'regiomino_invoice', 
+  );
+	
+	$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+
+	/* DrupalInitialize() is an extra method added to TCPDFDrupal that initializes
+	*  some TCPDF variables (like font types), and makes possible to change the
+	*  default header or footer without creating a new class.
+	*/
+	$tcpdf->DrupalInitialize(array(
+		'author' => 'Regiomino GmbH',
+		'title' => 'Übergabequittung Lieferung',
+		'subject' => 'Quittung für die Übergabe einer Lieferung',
+		'keywords' => 'Regiomino, Einkauf, Lebensmittel, Lieferung',
+		'header' => array(
+			'html' => '&nbsp;',
+		),
+	));
+	
+	//Get order items for current shipping id
+	$query = new EntityFieldQuery;
+	$orderqry = $query
+		->entityCondition('entity_type', 'regiomino_order')
+		->propertyCondition('order_process_id', $opid)
+		->execute();
+
+	$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+	
+	foreach($order_items as $orderid => $ordervalues) {
+		$query = new EntityFieldQuery;
+		$shippingqry = $query
+			->entityCondition('entity_type', 'regiomino_order_shipping')
+			->propertyCondition('uid_p', $account->uid)
+			//->propertyCondition('shipping_type', 'bringlivery')
+			->propertyCondition('shipping_id', $ordervalues->shipping)
+			->execute();
+
+		$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+		
+		$order_items[$orderid]->shipping = $shipping_items;
+		//Determine if this bringlivery or centralpickup
+		$type = $order_items[$orderid]->shipping[key($order_items[$orderid]->shipping)]->shipping_type;
+		
+		$pointfci = $order_items[$orderid]->shipping[key($order_items[$orderid]->shipping)]->fci;
+		$pointuser = $order_items[$orderid]->shipping[key($order_items[$orderid]->shipping)]->uid_p;
+		$customer['first_name'] = $ordervalues->delivery_first_name;
+		$customer['last_name'] = $ordervalues->delivery_last_name;
+		$customer['number'] = $ordervalues->order_process_id;
+		$customer['street1'] = $ordervalues->delivery_street1;
+		$customer['street2'] = "";
+		if($ordervalues->delivery_street2 != '') $customer['street2'] = ', ' . $ordervalues->delivery_street2;
+		$customer['zipcode'] = $ordervalues->delivery_postal_code;
+		$customer['city'] = $ordervalues->delivery_city;
+		$customer['phone'] = 'kA';
+		if(!empty($ordervalues->delivery_phone)) $customer['phone'] = '+49 (0) ' . ltrim($ordervalues->delivery_phone, '0');
+		$customer['alt'] = 'kA';
+		$receiveruserobject = user_load($ordervalues->uid);
+		if(isset($receiveruserobject->field_alternativelocation) && !empty($receiveruserobject->field_alternativelocation) && $receiveruserobject->field_alternativelocation[LANGUAGE_NONE][0]['value'] != '') {
+			$customer['alt'] = t($receiveruserobject->field_alternativelocation[LANGUAGE_NONE][0]['value']);
+		}
+		$customer['uid'] = $ordervalues->uid;
+		
+		if($type == 'bringlivery') {
+			$delivery_range_from = date('d.m.Y H:i', $order_items[$orderid]->shipping[key($order_items[$orderid]->shipping)]->shipping_range_from);
+			$delivery_range_to = date('H:i', $order_items[$orderid]->shipping[key($order_items[$orderid]->shipping)]->shipping_range_to);
+		}
+		else {
+			$delivery_range_from = date('d.m.Y H:i', $order_items[$orderid]->shipping[key($order_items[$orderid]->shipping)]->pickup_range_from);
+			$delivery_range_to = date('H:i', $order_items[$orderid]->shipping[key($order_items[$orderid]->shipping)]->pickup_range_to);
+		}
+	}
+	
+	$pointinfo = field_collection_item_load($pointfci);
+	$userinfo = user_load($pointuser);
+	$pointprofile = node_load($userinfo->field_profilereference_storage[LANGUAGE_NONE][0]['target_id']);
+
+
+		
+
+	$pointphone = 'kA';
+	if(!empty($pointprofile->field_publicphone[LANGUAGE_NONE][0]['number'])) {
+		$pointphone = '+49 (0) ' . ltrim($pointprofile->field_publicphone[LANGUAGE_NONE][0]['number'],'0');
+	}
+	
+			
+$html = '<p style="font-size: large;">Lieferung: ' . $delivery_range_from . ' - ' . $delivery_range_to . '</p><!--<p><strong>Ansprechpartner: ' . $pointprofile->title . ' (' . $userinfo->field_address[LANGUAGE_NONE][0]['first_name'] . ' ' . $userinfo->field_address[LANGUAGE_NONE][0]['last_name'] . ', Tel.: ' . $pointphone . ')</strong></p>-->';
+
+			if($type == 'bringlivery') {
+				$html .= '<p style="font-size: xx-large;"><strong>Empfänger: ' . $customer['first_name'] . ' ' . $customer['last_name'] . '<br />' . $customer['street1'] . $customer['street2'] . ', ' . $customer['zipcode'] . ' ' . $customer['city'] . '</strong><br />Kundennr.: ' . $customer['uid'] . '<br />Bestellnr.: ' . $customer['number'] . '<br />Tel.: ' . $customer['phone'] . '<br />Alternative: ' . $customer['alt'] . '</p>';
+			}
+			else {
+				$html .= '<p style="font-size: xx-large;"><strong>Empfänger: ' . $customer['first_name'] . ' ' . $customer['last_name'] . '<br />RM Point ' . $pointinfo->field_address[LANGUAGE_NONE][0]['name_line'] . ', ' . $pointinfo->field_address[LANGUAGE_NONE][0]['thoroughfare'] . ', ' . $pointinfo->field_address[LANGUAGE_NONE][0]['postal_code'] . ' ' . $pointinfo->field_address[LANGUAGE_NONE][0]['locality'] . '</strong><br />Kundennr.: ' . $customer['uid'] . '<br />Bestellnr.: ' . $customer['number'] . '<br />Tel.: ' . $customer['phone'] . '<br />Alternative: ' . $customer['alt'] . '</p>';
+			}
+			$html .= '
+						<style>
+						tr.rechnungsposheader th {
+							border-bottom: 0.5px solid #000000;
+							font-weight: bold;
+							font-size: large;
+						}
+						tr.taxes th {
+							border-top: 0.5px solid #92BF20;
+							font-weight: bold;
+						}
+						tr.lastrow td {
+							border-bottom: 0.5px solid #000000;
+						}
+						tr.summary td {
+							font-weight: bold;
+						}
+						table.taxcalc {
+							font-size: small;
+						}
+						td {
+							font-size: large;
+						}
+						td.amountrow {
+							width: 60px;
+						}
+						td.descrow {
+							width: 250px;
+						}
+						td.noterow {
+							width: 90px;
+						}
+						th.amountrow {
+							width: 60px;
+						}
+						th.descrow {
+							width: 250px;
+						}
+						th.noterow {
+							width: 90px;
+						}
+					</style>
+					<table cellpadding="4">
+						<tr class="rechnungsposheader">
+							<th class="amountrow">Anzahl</th><th class="descrow">Angebot</th><th class="noterow">Notiz</th>
+						</tr>
+						';
+			
+/* 			foreach($params['products'] as $productkey=>$productvalue) {
+			
+				$html .= '<tr>
+				<td class="amountrow">' . $productvalue['menge'] . ' x ' . $productvalue['einheit_amount'] . ' ' . t($productvalue['einheit_unit']) . '</td><td class="descrow">' . $productvalue['title'] . ' (# ' . $productvalue['nid'] . ')</td>
+				</tr>';
+			} */
+			
+			$previousseller = '';
+			foreach($order_items as $orderid => $ordervalues) {
+			
+				$nodeinfo = node_load($ordervalues->nid);
+				if($ordervalues->seller_company != $previousseller) {
+					$html .= '<tr><td colspan="3"><p style="font-size: large;"><strong>' . $ordervalues->seller_company . '</strong></p></td></tr>';
+					$previousseller = $ordervalues->seller_company;
+				}
+				$html .= '<tr>
+					<td class="amountrow">' . $ordervalues->product_count . ' x ' . $nodeinfo->field_packingunit[LANGUAGE_NONE][0]['first'] . ' ' . t($nodeinfo->field_packingunit[LANGUAGE_NONE][0]['second']) . '</td><td class="descrow">' . $nodeinfo->title . ' (# ' . $nodeinfo->nid . ')</td><td class="noterow"></td>
+					</tr>';
+			
+			}
+						
+						
+						
+			$html .= '</table>
+					<br />
+
+					<p style="font-size: large;"><strong>Ware erhalten?</strong></p>
+					<p>Datum: ___________________ Unterschrift des o.g. Kunden: ________________________________</p>
+					<br />
+					<br />
+					<p style="font-size: large;"><strong>Haben Sie Fragen?</strong></p>
+					<p>Bitte kontaktieren Sie uns per Mail unter support@regiomino.de</p>';
+	
+	$tcpdf->writeHTML($html);
+
+	$pdfoutput = $tcpdf->Output('', 'S');
+				
+	if($return) {
+		return $pdfoutput;
+	}
+	else {
+		// Tell the browser that this is not an HTML file to show, but a pdf file to
+		// download.
+		header('Content-Type: application/pdf');
+		header('Content-Length: ' . strlen($pdfoutput));
+		header('Content-Disposition: attachment; filename="LieferungBestellnummer' . $opid . '.pdf"');
+		print $pdfoutput;
+		return NULL;			
+	}
+}
+
+function regiomino_shipping_get_assignments_print_pickup($sid, $return = FALSE, $account = NULL) {
+	if(is_null($account)) {
+		global $user;
+		$account = user_load($user->uid);
+	}
+	
+	$tmp = explode('_', $sid);
+	$sid = $tmp[0];
+	$pickup_range_to_day = $tmp[1];
+	$pickup_range_from = strtotime(date('Y-m-d', $pickup_range_to_day) . ' 08:00:00');
+
+  // Never make an instance of TCPDF or TCPDFDrupal classes manually.
+  // Use tcpdf_get_instance() instead.
+	$tcpdf_params = array(
+    'unicode' => TRUE,
+    'encoding' => 'UTF-8',
+  );
+  // TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+  $tcpdf_class = array(
+    'class' => 'TCPDFRegiomino',
+    'filetype' => 'inc',
+    'filename' => 'regiomino_invoice.class',
+    'module' => 'regiomino_invoice',
+  );
+  // regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+  $tcpdf_config = array(
+    'filetype' => 'inc',
+    'filename' => 'regiomino_invoice.config',
+    'module' => 'regiomino_invoice', 
+  );
+	
+	$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+
+	/* DrupalInitialize() is an extra method added to TCPDFDrupal that initializes
+	*  some TCPDF variables (like font types), and makes possible to change the
+	*  default header or footer without creating a new class.
+	*/
+	$tcpdf->DrupalInitialize(array(
+		'author' => 'Regiomino GmbH',
+		'title' => 'Liste Abholung',
+		'subject' => 'Liste für die Abholung einer Bestellung',
+		'keywords' => 'Regiomino, Rechnung, Einkauf, Lebensmittel, Selbstabholung, Zentralabholung',
+		'header' => array(
+			'html' => '&nbsp;',
+		),
+	));
+	
+	$selleruser = user_load($sid);
+	
+	$sellerprofile = node_load($selleruser->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+	$company_name = $sellerprofile->field_company_name[LANGUAGE_NONE][0]['value'];
+
+	//Get shipping assignments for current user
+	$query = new EntityFieldQuery;
+	$orderqry = $query
+		->entityCondition('entity_type', 'regiomino_order')
+		->propertyCondition('seller_company', $company_name)
+		->propertyCondition('order_status', 'delivered', '!=')
+		->propertyCondition('order_status', 'billed', '!=')
+		->propertyCondition('order_status', 'pending', '!=')
+		->propertyCondition('order_status', 'canceled', '!=')
+		//->propertyCondition('shipping_type', 'bringlivery')
+		//->propertyCondition('uid', 1254)
+		//->propertyCondition('invoice', NULL)
+		//->propertyCondition('invoice_sale', NULL)
+		->execute();
+
+	$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+	
+	foreach($order_items as $orderid => $ordervalues) {
+		
+		if(is_array($ordervalues->shipping)) {
+			$gjhgj = array_keys($ordervalues->shipping);
+			$shpid = $gjhgj[0];
+		}
+		else {
+			$shpid = $ordervalues->shipping;
+		}
+		$query = new EntityFieldQuery;
+		$shpqry = $query
+			->entityCondition('entity_type', 'regiomino_order_shipping')
+			->propertyCondition('shipping_id', $shpid)
+			->execute();
+			
+		$shp_items = entity_load('regiomino_order_shipping', array_keys($shpqry['regiomino_order_shipping']));
+		$order_items[$orderid]->shipping_items = $shp_items;
+	}
+
+	//Now sort out all order_items that do not belong to the current shipper or are not due on the same day
+	foreach($order_items as $orderid => $ordervalues) {
+		foreach($ordervalues->shipping_items as $shippingid => $shippingvalues) {
+			if($account->uid != $shippingvalues->uid_p || $pickup_range_to_day != strtotime(date('d.m.Y', $shippingvalues->pickup_range_to))) unset($order_items[$orderid]);
+		}
+	}
+	
+	//$order_items items now only contains orders by the provided seller to be picked up by the provided shipper
+
+	foreach($order_items as $orderid => $ordervalues) {
+
+		$pointfci = $order_items[$orderid]->shipping_items[key($order_items[$orderid]->shipping_items)]->fci;
+		$pointuser = $order_items[$orderid]->shipping_items[key($order_items[$orderid]->shipping_items)]->uid;
+		$seller['company'] = $ordervalues->seller_company;
+		$seller['street1'] = $ordervalues->seller_street1;
+		$seller['street2'] = "";
+		if($ordervalues->delivery_street2 != '') $seller['street2'] = ', ' . $ordervalues->delivery_street2;
+		$seller['zipcode'] = $ordervalues->seller_postal_code;
+		$seller['city'] = $ordervalues->seller_city;
+		$seller['phone'] = 'kA';
+		if(!empty($ordervalues->seller_phone)) $seller['phone'] = '+49 (0) ' . ltrim($ordervalues->seller_phone, '0');
+		
+	}
+	
+	$pointinfo = field_collection_item_load($pointfci);
+	$userinfo = user_load($pointuser);
+	$pointprofile = node_load($userinfo->field_profilereference_storage[LANGUAGE_NONE][0]['target_id']);
+
+
+		
+
+	$pointphone = 'kA';
+	if(!empty($pointprofile->field_publicphone[LANGUAGE_NONE][0]['number'])) {
+		$pointphone = '+49 (0) ' . ltrim($pointprofile->field_publicphone[LANGUAGE_NONE][0]['number'],'0');
+	}
+	
+			
+	$html = '<p style="font-size: large;"><strong>Abholung: ' . date('d.m.Y', $pickup_range_to_day) . '</strong></p>
+			<p style="font-size: xx-large;">Verkäufer: ' . $seller['company'] . '<br />' . $seller['street1'] . $seller['street2'] . ', ' . $seller['zipcode'] . ' ' . $seller['city'] . '<br />Tel.: ' . $seller['phone'] . '</p>
+						<style>
+						tr.rechnungsposheader th {
+							border-bottom: 0.5px solid #000000;
+							font-weight: bold;
+							font-size: large;
+						}
+						tr.taxes th {
+							border-top: 0.5px solid #92BF20;
+							font-weight: bold;
+						}
+						tr.lastrow td {
+							border-bottom: 0.5px solid #000000;
+						}
+						tr.summary td {
+							font-weight: bold;
+						}
+						table.taxcalc {
+							font-size: small;
+						}
+						td {
+							font-size: large;
+						}
+						td.amountrow {
+							width: 60px;
+						}
+						td.descrow {
+							width: 250px;
+						}
+						td.noterow {
+							width: 90px;
+						}
+						th.amountrow {
+							width: 60px;
+						}
+						th.descrow {
+							width: 250px;
+						}
+						th.noterow {
+							width: 90px;
+						}
+					</style>
+					<table cellpadding="4">
+						<tr class="rechnungsposheader">
+							<th class="amountrow">Anzahl</th><th class="descrow">Angebot</th><th class="noterow">Notiz</th>
+						</tr>
+						';
+	
+			$previousrecipient = '';
+			foreach($order_items as $orderid => $ordervalues) {
+				$shippingkeys = array_keys($ordervalues->shipping_items);
+				$shipping_type = $order_items[$orderid]->shipping_items[$shippingkeys[0]]->shipping_type;
+
+				$nodeinfo = node_load($ordervalues->nid);
+				if($shipping_type == 'centralpickup') {
+					if($ordervalues->order_process_id . $ordervalues->shipping_items[$shippingkeys[0]]->fci != $previousrecipient) {
+						$pointfci = field_collection_item_load($ordervalues->shipping_items[$shippingkeys[0]]->fci);
+						$html .= '<tr><td colspan="3"><p style="font-size: large;"><strong>' . $ordervalues->order_process_id . ': ' . $ordervalues->delivery_first_name . ' ' . $ordervalues->delivery_last_name . ', RM Point ' . $pointfci->field_address[LANGUAGE_NONE][0]['name_line'] . ', ' . $pointfci->field_address[LANGUAGE_NONE][0]['thoroughfare'] . ', ' . $pointfci->field_address[LANGUAGE_NONE][0]['postal_code'] . ' ' . $pointfci->field_address[LANGUAGE_NONE][0]['locality'] . '</strong></p></td></tr>';
+						$previousrecipient = $ordervalues->order_process_id . $ordervalues->shipping_items[$shippingkeys[0]]->fci;
+					}
+				}
+				else {
+					if($ordervalues->order_process_id != $previousrecipient) {
+						$street2 = '';
+						if(!empty($ordervalues->delivery_street2) && $ordervalues->delivery_street2 != '') $street2 = ', ' . $ordervalues->delivery_street2;
+						$html .= '<tr><td colspan="3"><p style="font-size: large;"><strong>' . $ordervalues->order_process_id . ': ' . $ordervalues->delivery_first_name . ' ' . $ordervalues->delivery_last_name . ', ' . $ordervalues->delivery_street1 . ' ' . $street2 . ', ' . $ordervalues->delivery_postal_code . ' ' .  $ordervalues->delivery_city . '</strong></p></td></tr>';
+						$previousrecipient = $ordervalues->order_process_id;
+					}
+				}
+				$html .= '<tr>
+						<td class="amountrow">' . $ordervalues->product_count . ' x ' . $nodeinfo->field_packingunit[LANGUAGE_NONE][0]['first'] . ' ' . t($nodeinfo->field_packingunit[LANGUAGE_NONE][0]['second']) . '</td><td class="descrow">' . $nodeinfo->title . ' (# ' . $nodeinfo->nid . ')</td><td class="noterow"></td>
+						</tr>';
+			}
+						
+						
+			$html .= '</table>';
+	
+	$tcpdf->writeHTML($html);
+
+	$pdfoutput = $tcpdf->Output('', 'S');
+
+	if($return) {
+		return $pdfoutput;
+	}
+	else {
+		// Tell the browser that this is not an HTML file to show, but a pdf file to
+		// download.
+		header('Content-Type: application/pdf');
+		header('Content-Length: ' . strlen($pdfoutput));
+		header('Content-Disposition: attachment; filename="AbholungVerkaeufer' . $sid . '.pdf"');
+		print $pdfoutput;
+		return NULL;			
+	}
+}
+
+
+
+function regiomino_shipping_get_assignments_point_print_pickup($opid) {
+
+	global $user;
+	$account = user_load($user->uid);
+	
+  // Never make an instance of TCPDF or TCPDFDrupal classes manually.
+  // Use tcpdf_get_instance() instead.
+	$tcpdf_params = array(
+    'unicode' => TRUE,
+    'encoding' => 'UTF-8',
+  );
+  // TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+  $tcpdf_class = array(
+    'class' => 'TCPDFRegiomino',
+    'filetype' => 'inc',
+    'filename' => 'regiomino_invoice.class',
+    'module' => 'regiomino_invoice',
+  );
+  // regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+  $tcpdf_config = array(
+    'filetype' => 'inc',
+    'filename' => 'regiomino_invoice.config',
+    'module' => 'regiomino_invoice', 
+  );
+	
+	$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+
+	/* DrupalInitialize() is an extra method added to TCPDFDrupal that initializes
+	*  some TCPDF variables (like font types), and makes possible to change the
+	*  default header or footer without creating a new class.
+	*/
+	$tcpdf->DrupalInitialize(array(
+		'author' => 'Regiomino GmbH',
+		'title' => 'Übergabequittung Selbstabholung',
+		'subject' => 'Quittung für die Übergabe einer Selbstabholung',
+		'keywords' => 'Regiomino, Rechnung, Transaktionsgebühr, Einkauf, Lebensmittel, Selbstabholung, Zentralabholung',
+		'header' => array(
+			'html' => '&nbsp;',
+		),
+	));
+	
+	//Get order items for current shipping id
+	$query = new EntityFieldQuery;
+	$orderqry = $query
+		->entityCondition('entity_type', 'regiomino_order')
+		->propertyCondition('order_process_id', $opid)
+		->execute();
+
+	$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+	
+	foreach($order_items as $orderid => $ordervalues) {
+		$query = new EntityFieldQuery;
+		$shippingqry = $query
+			->entityCondition('entity_type', 'regiomino_order_shipping')
+			->propertyCondition('uid', $account->uid)
+			->propertyCondition('shipping_type', 'centralpickup')
+			->propertyCondition('shipping_id', $ordervalues->shipping)
+			->execute();
+
+		$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+		
+		$order_items[$orderid]->shipping = $shipping_items;
+		$pointfci = $order_items[$orderid]->shipping[key($order_items[$orderid]->shipping)]->fci;
+		$pointuser = $order_items[$orderid]->shipping[key($order_items[$orderid]->shipping)]->uid;
+		$customer['first_name'] = $ordervalues->delivery_first_name;
+		$customer['last_name'] = $ordervalues->delivery_last_name;
+		$customer['phone'] = 'kA';
+		if(!empty($ordervalues->delivery_phone)) $customer['phone'] = '+49 (0) ' . ltrim($ordervalues->delivery_phone, '0');
+		$customer['uid'] = $ordervalues->uid;
+		
+		$delivery_range_from = date('d.m.Y H:i', $order_items[$orderid]->shipping[key($order_items[$orderid]->shipping)]->shipping_range_from);
+		$delivery_range_to = date('H:i', $order_items[$orderid]->shipping[key($order_items[$orderid]->shipping)]->shipping_range_to);
+	}
+	
+	$pointinfo = field_collection_item_load($pointfci);
+	$userinfo = user_load($pointuser);
+	$pointprofile = node_load($userinfo->field_profilereference_storage[LANGUAGE_NONE][0]['target_id']);
+
+
+		
+
+	$pointphone = 'kA';
+	if(!empty($pointprofile->field_publicphone[LANGUAGE_NONE][0]['number'])) {
+		$pointphone = '+49 (0) ' . ltrim($pointprofile->field_publicphone[LANGUAGE_NONE][0]['number'],'0');
+	}
+	
+			
+$html = '<p style="font-size: large;">Abholung: ' . $delivery_range_from . ' - ' . $delivery_range_to . '</p><p style="font-size: large;"><strong>RM Point ' . $pointinfo->field_address[LANGUAGE_NONE][0]['name_line'] . ', ' . $pointinfo->field_address[LANGUAGE_NONE][0]['thoroughfare'] . ', ' . $pointinfo->field_address[LANGUAGE_NONE][0]['postal_code'] . ' ' . $pointinfo->field_address[LANGUAGE_NONE][0]['locality'] . '</strong></p><!--<p><strong>Ansprechpartner: ' . $pointprofile->title . ' (' . $userinfo->field_address[LANGUAGE_NONE][0]['first_name'] . ' ' . $userinfo->field_address[LANGUAGE_NONE][0]['last_name'] . ', Tel.: ' . $pointphone . ')';
+
+			$html .= '</strong></p>-->
+			<p style="font-size: xx-large;"><strong>Kunde: ' . $customer['first_name'] . ' ' . $customer['last_name'] . '</strong><br />Kundennr.: ' . $customer['uid'] . '<br />Tel.: ' . $customer['phone'] . '</p>
+						<style>
+						tr.rechnungsposheader th {
+							border-bottom: 0.5px solid #000000;
+							font-weight: bold;
+							font-size: large;
+						}
+						tr.taxes th {
+							border-top: 0.5px solid #92BF20;
+							font-weight: bold;
+						}
+						tr.lastrow td {
+							border-bottom: 0.5px solid #000000;
+						}
+						tr.summary td {
+							font-weight: bold;
+						}
+						table.taxcalc {
+							font-size: small;
+						}
+						td {
+							font-size: large;
+						}
+						td.amountrow {
+							width: 60px;
+						}
+						td.descrow {
+							width: 250px;
+						}
+						td.noterow {
+							width: 90px;
+						}
+						th.amountrow {
+							width: 60px;
+						}
+						th.descrow {
+							width: 250px;
+						}
+						th.noterow {
+							width: 90px;
+						}
+					</style>
+					<table cellpadding="4">
+						<tr class="rechnungsposheader">
+							<th class="amountrow">Anzahl</th><th class="descrow">Angebot</th><th class="noterow">Notiz</th>
+						</tr>
+						';
+			
+/* 			foreach($params['products'] as $productkey=>$productvalue) {
+			
+				$html .= '<tr>
+				<td class="amountrow">' . $productvalue['menge'] . ' x ' . $productvalue['einheit_amount'] . ' ' . t($productvalue['einheit_unit']) . '</td><td class="descrow">' . $productvalue['title'] . ' (# ' . $productvalue['nid'] . ')</td>
+				</tr>';
+			} */
+			
+			$previousseller = '';
+			foreach($order_items as $orderid => $ordervalues) {
+			
+				$nodeinfo = node_load($ordervalues->nid);
+				if($ordervalues->seller_company != $previousseller) {
+					$html .= '<tr><td colspan="3"><p style="font-size: large;"><strong>' . $ordervalues->seller_company . '</strong></p></td></tr>';
+					$previousseller = $ordervalues->seller_company;
+				}
+				$html .= '<tr>
+					<td class="amountrow">' . $ordervalues->product_count . ' x ' . $nodeinfo->field_packingunit[LANGUAGE_NONE][0]['first'] . ' ' . t($nodeinfo->field_packingunit[LANGUAGE_NONE][0]['second']) . '</td><td class="descrow">' . $nodeinfo->title . ' (# ' . $nodeinfo->nid . ')</td><td class="noterow"></td>
+					</tr>';
+			
+			}
+						
+						
+						
+			$html .= '</table>
+					<br />
+
+					<p style="font-size: large;"><strong>Ware erhalten?</strong></p>
+					<p>Datum: ___________________ Unterschrift des o.g. Kunden: ________________________________</p>
+					<br />
+					<br />
+					<p style="font-size: large;"><strong>Haben Sie Fragen?</strong></p>
+					<p>Bitte kontaktieren Sie uns per Mail unter support@regiomino.de</p>';
+	
+	$tcpdf->writeHTML($html);
+
+	$pdfoutput = $tcpdf->Output('', 'S');
+				
+	// Tell the browser that this is not an HTML file to show, but a pdf file to
+  // download.
+  header('Content-Type: application/pdf');
+  header('Content-Length: ' . strlen($pdfoutput));
+  header('Content-Disposition: attachment; filename="LieferungBestellnummer' . $opid . '.pdf"');
+  print $pdfoutput;
+  return NULL;			
+
+}
+
+
+function regiomino_shipping_get_assignments_point_pickup() {
+	global $user;
+	$account = user_load($user->uid);
+	$shippingsorts = regiomino_shipping_get_pointvalues($account);
+	$sortedforpickup = $shippingsorts['sortedforpickup'];
+
+	//pass variables to template and return the result
+	return	theme('regiomino_shipping_theme_assignments_point_pickup', array(
+						'vars' => array(
+							'sortedforpickup' => $sortedforpickup,
+						),
+					));
+}
+
+function regiomino_shipping_get_assignments_delivery() {
+	global $user;
+	$account = user_load($user->uid);
+	$shippingsorts = regiomino_shipping_get_shippingvalues($account);
+	$sortedfordelivery = $shippingsorts['sortedfordelivery'];
+	//pass variables to template and return the result
+	return	theme('regiomino_shipping_theme_assignments_delivery', array(
+						'vars' => array(
+							'sortedfordelivery' => $sortedfordelivery,
+						),
+					));
+}
+
+function regiomino_shipping_get_assignments_pickup() {
+	global $user;
+	$account = user_load($user->uid);
+	$shippingsorts = regiomino_shipping_get_shippingvalues($account);
+	$sortedforpickup = $shippingsorts['sortedforpickup'];
+	//pass variables to template and return the result
+	return	theme('regiomino_shipping_theme_assignments_pickup', array(
+						'vars' => array(
+							'sortedforpickup' => $sortedforpickup,
+						),
+					));
+}
+
+
+function regiomino_shipping_get_pointvalues($account) {
+
+	$shippingsorts = &drupal_static(__FUNCTION__);
+
+	if(!isset($shippingsorts)) {
+		//Get shipping assignments for current user
+		$query = new EntityFieldQuery;
+		$shippingqry = $query
+			->entityCondition('entity_type', 'regiomino_order_shipping')
+			->propertyCondition('uid', $account->uid)
+			->propertyCondition('shipping_type', 'centralpickup')
+			//->propertyCondition('uid', 1254)
+			//->propertyCondition('invoice', NULL)
+			//->propertyCondition('invoice_sale', NULL)
+			->execute();
+
+		$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+
+		//Add complete order to shipping_items
+		foreach($shipping_items as $shippingid => $shippingvalues) {
+			//Get order items for current shipping id
+			$query = new EntityFieldQuery;
+			$orderqry = $query
+				->entityCondition('entity_type', 'regiomino_order')
+				->propertyCondition('shipping', $shippingid)
+				->execute();
+
+			$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+			
+			if($order_items[key($order_items)]->order_status == 'processing' ||	$order_items[key($order_items)]->order_status == 'completed') {
+				$shipping_items[$shippingid]->orders = $order_items;
+				
+				foreach($order_items as $orderid => $ordervalues) {
+					$node_items = entity_load('node', array($ordervalues->nid));
+					$shipping_items[$shippingid]->orders[$orderid]->title = $node_items[key($node_items)]->title;
+					$shipping_items[$shippingid]->orders[$orderid]->packingunit_first = $node_items[key($node_items)]->field_packingunit[LANGUAGE_NONE][0]['first'];
+					$shipping_items[$shippingid]->orders[$orderid]->packingunit_second = $node_items[key($node_items)]->field_packingunit[LANGUAGE_NONE][0]['second'];
+				}
+			}
+			else {
+				unset($shipping_items[$shippingid]);
+			}
+		}
+		$shippingsorts = array();
+		foreach($shipping_items as $shippingid=>$shippingvalues) {
+			//Create key with pickup range
+			$pickuprange = $shippingvalues->pickup_range_from . '-' . $shippingvalues->pickup_range_to;
+			//Create key with pickup address
+			$pickupaddressstring = $shippingvalues->orders[key($shippingvalues->orders)]->seller_street1;
+			if(isset($shippingvalues->orders[key($shippingvalues->orders)]->seller_street2) && !empty($shippingvalues->orders[key($shippingvalues->orders)]->seller_street2)) {
+				$pickupaddressstring .= ', ' . $shippingvalues->orders[key($shippingvalues->orders)]->seller_street1;
+			}
+			$pickupaddressstring .= ', ' . $shippingvalues->orders[key($shippingvalues->orders)]->seller_postal_code;
+			$pickupaddressstring .= ' ' . $shippingvalues->orders[key($shippingvalues->orders)]->seller_city;
+			$pickupaddress = json_encode($pickupaddressstring);
+			
+			//Create key with pickup name (identical to seller name)
+			$pickupname = json_encode($shippingvalues->orders[key($shippingvalues->orders)]->seller_company);
+
+			$storage_fci = field_collection_item_load($shippingvalues->fci);
+			$recipientaddressstring = 'Regiomino Point ' . $storage_fci->field_address[LANGUAGE_NONE][0]['name_line'];
+			$recipientaddressstring .= ', ' . $storage_fci->field_address[LANGUAGE_NONE][0]['thoroughfare'];
+			if(isset($storage_fci->field_address[LANGUAGE_NONE][0]['premise']) && !empty($storage_fci->field_address[LANGUAGE_NONE][0]['premise'])) {
+				$recipientaddressstring .= ', ' . $storage_fci->field_address[LANGUAGE_NONE][0]['premise'];
+			}
+			$recipientaddressstring .= ', ' . $storage_fci->field_address[LANGUAGE_NONE][0]['postal_code'];
+			$recipientaddressstring .= ' ' . $storage_fci->field_address[LANGUAGE_NONE][0]['locality'];
+			$deliveryrange = $shippingvalues->shipping_range_from . '-' . $shippingvalues->shipping_range_to;
+
+			$recipientaddress = json_encode($recipientaddressstring);
+			
+			//Create key with recipient name (identical to customer name)
+			$recipientname = $shippingvalues->orders[key($shippingvalues->orders)]->order_process_id . ' ' . $shippingvalues->orders[key($shippingvalues->orders)]->delivery_first_name . ' ' . $shippingvalues->orders[key($shippingvalues->orders)]->delivery_last_name;
+
+			if(!empty($shippingvalues->orders[key($shippingvalues->orders)]->delivery_phone)) {
+				$recipientname .= ' +49 (0) ' . ltrim($shippingvalues->orders[key($shippingvalues->orders)]->delivery_phone, '0');
+			}
+			
+			$recipientname .= ' (' . l(t('print delivery receipt'), 'admin/pointassignments/' . $shippingvalues->orders[key($shippingvalues->orders)]->order_process_id . '/print', array('attributes' => array('class' => array('pdfprint')))) . ')';
+			
+			$recipientname = json_encode($recipientname);
+			foreach($shippingvalues->orders as $orderid=>$ordervalue) {
+/* 				$shippingsorts['sortedforsupply'][$pickuprange][$pickupaddress][$pickupname][$recipientaddress][$recipientname][$orderid]['nid'] = $ordervalue->nid;
+				$shippingsorts['sortedforsupply'][$pickuprange][$pickupaddress][$pickupname][$recipientaddress][$recipientname][$orderid]['title'] = $ordervalue->title;
+				$shippingsorts['sortedforsupply'][$pickuprange][$pickupaddress][$pickupname][$recipientaddress][$recipientname][$orderid]['amount'] = $ordervalue->product_count . ' x ' . $ordervalue->packingunit_first . ' ' . t($ordervalue->packingunit_second);
+				ksort($shippingsorts['sortedforsupply']); */
+				$shippingsorts['sortedforpickup'][$deliveryrange][$recipientaddress][$recipientname][$pickupaddress][$pickupname][$orderid]['nid'] = $ordervalue->nid;
+				$shippingsorts['sortedforpickup'][$deliveryrange][$recipientaddress][$recipientname][$pickupaddress][$pickupname][$orderid]['title'] = $ordervalue->title;
+				$shippingsorts['sortedforpickup'][$deliveryrange][$recipientaddress][$recipientname][$pickupaddress][$pickupname][$orderid]['amount'] = $ordervalue->product_count . ' x ' . $ordervalue->packingunit_first . ' ' . t($ordervalue->packingunit_second);
+				ksort($shippingsorts['sortedforpickup']);
+			}
+		}
+	}
+	
+	return $shippingsorts;
+}
+
+
+function regiomino_shipping_get_shippingvalues($account) {
+
+	$shippingsorts = &drupal_static(__FUNCTION__);
+
+	if(!isset($shippingsorts)) {
+		//Get shipping assignments for current user
+		$query = new EntityFieldQuery;
+		$shippingqry = $query
+			->entityCondition('entity_type', 'regiomino_order_shipping')
+			->propertyCondition('uid_p', $account->uid)
+			//->propertyCondition('uid_p', 1254)
+			//->propertyCondition('invoice', NULL)
+			//->propertyCondition('invoice_sale', NULL)
+			->execute();
+
+		$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+
+		//Add complete order to shipping_items
+		foreach($shipping_items as $shippingid => $shippingvalues) {
+			//Get order items for current shipping id
+			$query = new EntityFieldQuery;
+			$orderqry = $query
+				->entityCondition('entity_type', 'regiomino_order')
+				->propertyCondition('shipping', $shippingid)
+				->execute();
+
+			$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+			
+			if($order_items[key($order_items)]->order_status == 'processing' ||	$order_items[key($order_items)]->order_status == 'completed') {
+				$shipping_items[$shippingid]->orders = $order_items;
+				
+				foreach($order_items as $orderid => $ordervalues) {
+					$node_items = entity_load('node', array($ordervalues->nid));
+					$shipping_items[$shippingid]->orders[$orderid]->title = $node_items[key($node_items)]->title;
+					$shipping_items[$shippingid]->orders[$orderid]->packingunit_first = $node_items[key($node_items)]->field_packingunit[LANGUAGE_NONE][0]['first'];
+					$shipping_items[$shippingid]->orders[$orderid]->packingunit_second = $node_items[key($node_items)]->field_packingunit[LANGUAGE_NONE][0]['second'];
+				}
+			}
+			else {
+				unset($shipping_items[$shippingid]);
+			}
+		}
+		
+		$shippingsorts = array();
+		foreach($shipping_items as $shippingid=>$shippingvalues) {
+			$pickupday = strtotime(date('d.m.Y', $shippingvalues->pickup_range_from));
+			$csvlinkseller = json_encode(l(t('download seller csv'), 'admin/shippingassignments/' . $shippingvalues->pickup_range_from . '/csvseller', array('attributes' => array('class' => array('csvprint')))));
+			$csvlinkcustomer = json_encode(l(t('download customer csv'), 'admin/shippingassignments/' . $shippingvalues->pickup_range_from . '/csvcustomer', array('attributes' => array('class' => array('csvprint')))));
+			//Create key with pickup address
+			$pickupaddressstring = $shippingvalues->orders[key($shippingvalues->orders)]->seller_street1;
+			if(isset($shippingvalues->orders[key($shippingvalues->orders)]->seller_street2) && !empty($shippingvalues->orders[key($shippingvalues->orders)]->seller_street2)) {
+				$pickupaddressstring .= ', ' . $shippingvalues->orders[key($shippingvalues->orders)]->seller_street1;
+			}
+			$pickupaddressstring .= ', ' . $shippingvalues->orders[key($shippingvalues->orders)]->seller_postal_code;
+			$pickupaddressstring .= ' ' . $shippingvalues->orders[key($shippingvalues->orders)]->seller_city;
+			$pickupaddress = json_encode($pickupaddressstring);
+			
+
+			//Create key with recipient address
+			switch($shippingvalues->shipping_type) {
+				case 'bringlivery':
+					$recipientaddressstring = $shippingvalues->orders[key($shippingvalues->orders)]->delivery_street1;
+					if(isset($shippingvalues->orders[key($shippingvalues->orders)]->delivery_street2) && !empty($shippingvalues->orders[key($shippingvalues->orders)]->delivery_street2)) {
+						$recipientaddressstring .= ', ' . $shippingvalues->orders[key($shippingvalues->orders)]->delivery_street2;
+					}
+					$recipientaddressstring .= ', ' . $shippingvalues->orders[key($shippingvalues->orders)]->delivery_postal_code;
+					$recipientaddressstring .= ' ' . $shippingvalues->orders[key($shippingvalues->orders)]->delivery_city;
+					$deliveryrange = date('H:i', $shippingvalues->shipping_range_from) . '-' . date('H:i', $shippingvalues->shipping_range_to);
+					$deliveryday = strtotime(date('d.m.Y', $shippingvalues->shipping_range_from));
+				break;
+				case 'centralpickup':
+					$storage_fci = field_collection_item_load($shippingvalues->fci);
+					$recipientaddressstring = 'Regiomino Point ' . $storage_fci->field_address[LANGUAGE_NONE][0]['name_line'];
+					$recipientaddressstring .= ', ' . $storage_fci->field_address[LANGUAGE_NONE][0]['thoroughfare'];
+					if(isset($storage_fci->field_address[LANGUAGE_NONE][0]['premise']) && !empty($storage_fci->field_address[LANGUAGE_NONE][0]['premise'])) {
+						$recipientaddressstring .= ', ' . $storage_fci->field_address[LANGUAGE_NONE][0]['premise'];
+					}
+					$recipientaddressstring .= ', ' . $storage_fci->field_address[LANGUAGE_NONE][0]['postal_code'];
+					$recipientaddressstring .= ' ' . $storage_fci->field_address[LANGUAGE_NONE][0]['locality'];
+					$deliveryrange = date('H:i', $shippingvalues->pickup_range_from) . '-' . date('H:i', $shippingvalues->shipping_range_from);
+					$deliveryday = strtotime(date('d.m.Y', $shippingvalues->pickup_range_from));
+				break;
+			}
+			$recipientaddress = json_encode($recipientaddressstring);
+
+			//Create key with pickup name (identical to seller name)
+			$pickupname = $shippingvalues->orders[key($shippingvalues->orders)]->seller_company;
+			
+			if(arg(2) == '' || arg(2) == 'sortedforpickup') {
+				$productobject = node_load($shippingvalues->orders[key($shippingvalues->orders)]->nid);
+				
+				$pickupname .= ' (' . l(t('print pickup receipt'), 'admin/shippingassignments/sortedforpickup/' . $productobject->uid . '_' . strtotime(date('d.m.Y', $shippingvalues->shipping_range_from)) . '/print', array('attributes' => array('class' => array('pdfprint')))) . ')';
+			}
+			
+			$pickupname = json_encode($pickupname);
+			
+			//Create key with recipient name (identical to customer name)
+			$recipientname = $shippingvalues->orders[key($shippingvalues->orders)]->order_process_id . ' ' . $shippingvalues->orders[key($shippingvalues->orders)]->delivery_first_name . ' ' . $shippingvalues->orders[key($shippingvalues->orders)]->delivery_last_name;
+
+			if(!empty($shippingvalues->orders[key($shippingvalues->orders)]->delivery_phone)) {
+				$recipientname .= ' +49 (0) ' . ltrim($shippingvalues->orders[key($shippingvalues->orders)]->delivery_phone, '0');
+			}
+			
+			$recipientuser = user_load($shippingvalues->orders[key($shippingvalues->orders)]->uid);
+
+			if(isset($recipientuser->field_alternativelocation) && !empty($recipientuser->field_alternativelocation) && $recipientuser->field_alternativelocation[LANGUAGE_NONE][0]['value'] != '') {
+				$recipientname .= ' (Alternativ: ' . t($recipientuser->field_alternativelocation[LANGUAGE_NONE][0]['value']) . ')';
+			}
+			
+			if(arg(2) == 'sortedfordelivery') $recipientname .= ' (' . l(t('print delivery receipt'), 'admin/shippingassignments/sortedfordelivery/' . $shippingvalues->orders[key($shippingvalues->orders)]->order_process_id . '/print', array('attributes' => array('class' => array('pdfprint')))) . ')';
+			
+			
+			$recipientname = json_encode($recipientname);
+			foreach($shippingvalues->orders as $orderid=>$ordervalue) {
+				$shippingsorts['sortedforpickup'][$pickupday][$csvlinkseller][$pickupaddress][$pickupname][$recipientaddress][$recipientname][$orderid]['nid'] = $ordervalue->nid;
+				$shippingsorts['sortedforpickup'][$pickupday][$csvlinkseller][$pickupaddress][$pickupname][$recipientaddress][$recipientname][$orderid]['title'] = $ordervalue->title;
+				$shippingsorts['sortedforpickup'][$pickupday][$csvlinkseller][$pickupaddress][$pickupname][$recipientaddress][$recipientname][$orderid]['amount'] = $ordervalue->product_count . ' x ' . $ordervalue->packingunit_first . ' ' . t($ordervalue->packingunit_second);
+
+				$shippingsorts['sortedfordelivery'][$deliveryday][$csvlinkcustomer][$recipientaddress][$recipientname][$pickupaddress][$pickupname][$orderid]['nid'] = $ordervalue->nid;
+				$shippingsorts['sortedfordelivery'][$deliveryday][$csvlinkcustomer][$recipientaddress][$recipientname][$pickupaddress][$pickupname][$orderid]['title'] = $ordervalue->title;
+				$shippingsorts['sortedfordelivery'][$deliveryday][$csvlinkcustomer][$recipientaddress][$recipientname][$pickupaddress][$pickupname][$orderid]['amount'] = $ordervalue->product_count . ' x ' . $ordervalue->packingunit_first . ' ' . t($ordervalue->packingunit_second);
+
+			}
+		}
+		ksort($shippingsorts['sortedforpickup']);
+		ksort($shippingsorts['sortedfordelivery']);
+	}
+	return $shippingsorts;
+}
+
+
+/**
+ * Implements hook_entity_info().
+ *
+ * This informs Drupal about an order being an entity and includes the custom db table
+ */
+function regiomino_shipping_entity_info() {
+  $return = array(
+    'regiomino_order_shipping' => array(
+      'label' => t('Regiomino Shipping Agreement'),
+      'entity class' => 'Entity',
+      'controller class' => 'EntityAPIController',
+      'base table' => 'regiomino_order_shipping',
+      'fieldable' => TRUE,
+      'entity keys' => array(
+        'id' => 'shipping_id',
+        'label' => 'shipping_id',
+      ),
+      'bundles' => array(),
+      'load hook' => 'regiomino_shipping_load',
+      'view modes' => array(
+        'full' => array(
+          'label' => t('Default'),
+          'custom settings' => FALSE,
+        ),
+      ),
+      'label callback' => 'entity_class_label',
+      'uri callback' => 'entity_class_uri',
+      'module' => 'regiomino_shipping',
+    ),
+    'regiomino_shipping_types' => array(
+      'label' => t('Regiomino Shipping Types'),
+      'entity class' => 'Entity',
+      'controller class' => 'EntityAPIController',
+      'base table' => 'regiomino_shipping_types',
+      'fieldable' => FALSE,
+      'entity keys' => array(
+        'id' => 'shipping_type_id',
+      ),
+      'bundles' => array(),
+      'load hook' => 'regiomino_shipping_load',
+      'view modes' => array(
+        'full' => array(
+          'label' => t('Default'),
+          'custom settings' => FALSE,
+        ),
+      ),
+      'label callback' => 'entity_class_label',
+      'uri callback' => 'entity_class_uri',
+      'module' => 'regiomino_shipping',
+    ),		
+  );
+  return $return;
+}
+
+/**
+ * Implements hook_entity_property_info_alter().
+ *
+ * This ensures that order entities can be accessed through views and relationships
+ */
+function regiomino_shipping_entity_property_info_alter(&$info) {
+  $properties = &$info['regiomino_order_shipping']['properties'];
+	$properties['shipping_type'] = array(
+    'label' => t("Shipping Type"),
+    'type' => 'regiomino_shipping_types',
+    'description' => t("Regiomino Shipping Type"),
+    'required' => TRUE,
+    'schema field' => 'shipping_type',
+  );
+	$properties['invoice'] = array(
+    'label' => t("Invoice"),
+    'type' => 'node',
+    'description' => t("Invoice"),
+    'required' => TRUE,
+    'schema field' => 'nid',
+  );
+  $properties['uid'] = array(
+    'label' => t("User responsible for shipping"),
+    'type' => 'user',
+    'description' => t("The user responsible for shipping."),
+    'required' => TRUE,
+    'schema field' => 'uid',
+  );
+	$properties['pickup_range_from'] = array(
+    'label' => t("Pickup Range From"),
+    'type' => 'date',
+    'description' => t("Pickup Range From"),
+    'required' => TRUE,
+    'schema field' => 'pickup_range_from',
+  );
+	$properties['pickup_range_to'] = array(
+    'label' => t("Pickup Range To"),
+    'type' => 'date',
+    'description' => t("Pickup Range To"),
+    'required' => TRUE,
+    'schema field' => 'pickup_range_to',
+  );
+	$properties['shipping_range_from'] = array(
+    'label' => t("Shipping Range From"),
+    'type' => 'date',
+    'description' => t("Shipping Range From"),
+    'required' => TRUE,
+    'schema field' => 'shipping_range_from',
+  );
+	$properties['shipping_range_to'] = array(
+    'label' => t("Shipping Range To"),
+    'type' => 'date',
+    'description' => t("Shipping Range To"),
+    'required' => TRUE,
+    'schema field' => 'shipping_range_to',
+  );
+}
+
+function regiomino_shipping_get_regional_deliveryoptions($delivery_postal_code, $amounttoshow = 1) {
+	$addtime = date('I', time());
+	if($addtime) {
+		$addtime = 7200;
+	}
+	else {
+		$addtime = 3600;
+	}
+	//Fragment the user postal code to be able to compare it against areas (incomplete postal codes)
+	$deliveryfragments = array();
+	for($i=1; $i<=strlen($delivery_postal_code); $i++) {
+		$deliveryfragments[] = substr($delivery_postal_code, 0, $i);
+	}
+
+	$query = new EntityFieldQuery;
+	$tmp = $query
+		->entityCondition('entity_type', 'field_collection_item')
+		->entityCondition('bundle', 'field_delivery_options')
+		->fieldCondition('field_delivery_areas', 'value', $deliveryfragments)
+		->execute();
+	$fcikeys = array_keys($tmp['field_collection_item']);
+	$field_collection_items = entity_load('field_collection_item', $fcikeys);
+	$query = new EntityFieldQuery;
+	$tmp = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'shipper_profile')
+		->propertyCondition('status', 1)
+		->fieldCondition('field_delivery_options', 'value', $fcikeys)
+		->execute();
+	$shipperprofiles = entity_load('node', array_keys($tmp['node']));
+	$deliverydates = array();
+	$today = strtotime(date('d.m.Y'));
+	foreach($shipperprofiles as $nid=>$value) {
+		foreach($value->field_delivery_options[LANGUAGE_NONE] as $hostfci) {
+		
+			if(isset($field_collection_items[$hostfci['value']]) && !empty($field_collection_items[$hostfci['value']])) {
+				$fcitem = $field_collection_items[$hostfci['value']];
+				break;
+			}
+		}
+		$counter = 0;		
+		foreach($fcitem->field_delivery_dates[LANGUAGE_NONE] as $date) {
+			
+			$deliveryday = strtotime(date('d.m.Y', strtotime($date['value'])+$addtime));
+			if($deliveryday - $today >= 86400) {
+
+				$deliverydates[$fcitem->item_id]['deliverydates'][] = $date;
+				$deliverydates[$fcitem->item_id]['hostentity'] = node_load($nid);
+				$counter++;
+				if($counter == $amounttoshow) break;
+			}
+		}
+	}
+	
+	$returnarray = array();
+	foreach($deliverydates as $fckey => $values) {
+		$shipperuid = $values['hostentity']->uid;
+		foreach($values['deliverydates'] as $date) {
+			$deliverytimestamp = strtotime($date['value'])+$addtime;
+			$deliverytimestamp_end = strtotime($date['value2'])+$addtime;
+			$pickup_range_from = strtotime(date('d.m.Y', $deliverytimestamp) . ' 08:00');
+			$toptions = array(
+				'!timewindow' => date('d.m.Y H:i', $deliverytimestamp) . ' - ' . date('H:i', $deliverytimestamp_end),
+				'!price' => t('free'),
+			);
+			$returnarray[$shipperuid . '-' . $deliverytimestamp . '-' . $deliverytimestamp_end . '-' . $pickup_range_from . '-' . $deliverytimestamp . '-' . 0.00 . '-' . $fckey . '-' . $fckey . '-' . $shipperuid] = t('!timewindow (!price)', $toptions);
+		}
+	}
+	return $returnarray;
+}
+
+function regiomino_shipping_get_regional_pickupoptions($fci, $amounttoshow = 1) {
+	$addtime = date('I', time());
+	if($addtime) {
+		$addtime = 7200;
+	}
+	else {
+		$addtime = 3600;
+	}
+	$fcitem = field_collection_item_load($fci);
+	$query = new EntityFieldQuery;
+	$tmp = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'storage_profile')
+		->fieldCondition('field_storage_data', 'value', $fci)
+		->execute();
+	$storageprofiles = entity_load('node', array_keys($tmp['node']));
+	$storageprofilenids = array_keys($storageprofiles);
+	$storageprofile = $storageprofiles[$storageprofilenids[0]];
+	$deliverydates = array();
+	$today = strtotime(date('d.m.Y'));
+	foreach($fcitem->field_delivery_dates[LANGUAGE_NONE] as $date) {
+		
+		$deliveryday = strtotime(date('d.m.Y', strtotime($date['value'])+$addtime));
+		if($deliveryday - $today >= 86400) {
+			$deliverydates[$fcitem->item_id]['deliverydates'][] = $date;
+			$deliverydates[$fcitem->item_id]['hostentity'] = $storageprofile;
+			$counter++;
+			if($counter == $amounttoshow) break;
+		}
+	}
+	
+	//Determine the postal code of the storage for picking up
+	$storage_postal_code = $fcitem->field_address[LANGUAGE_NONE][0]['postal_code'];
+	//Fragment the storage postal code to be able to compare it against areas (incomplete postal codes)
+	$storageplzfragments = array();
+	for($i=1; $i<=strlen($storage_postal_code); $i++) {
+		$storageplzfragments[] = substr($storage_postal_code, 0, $i);
+	}
+
+	$returnarray = array();
+	foreach($deliverydates as $fckey => $values) {
+		$shipperuid = $values['hostentity']->uid;
+		foreach($values['deliverydates'] as $date) {
+			$deliverytimestamp = strtotime($date['value'])+$addtime;
+			$deliverytimestamp_end = strtotime($date['value2'])+$addtime;
+			$pickup_range_from = strtotime(date('d.m.Y', $deliverytimestamp) . ' 08:00');
+			$toptions = array(
+				'!timewindow' => date('d.m.Y H:i', $deliverytimestamp) . ' - ' . date('H:i', $deliverytimestamp_end),
+			);
+			$deliverytimestamp_roundup = strtotime(date('Y-m-d', $deliverytimestamp) . ' +1 day');
+			$deliverytimestamp_rounddown = strtotime(date('Y-m-d', $deliverytimestamp));
+			
+			$query_int = new EntityFieldQuery;
+			$tmp_int = $query_int
+				->entityCondition('entity_type', 'field_collection_item')
+				->entityCondition('bundle', 'field_delivery_options')
+				->fieldCondition('field_delivery_areas', 'value', $storageplzfragments)
+				->fieldCondition('field_delivery_dates', 'value', date("Y-m-d H:i:s", $deliverytimestamp_rounddown), '>')
+				->fieldCondition('field_delivery_dates', 'value', date("Y-m-d H:i:s", $deliverytimestamp_roundup), '<')
+				->execute();
+				
+			$shipperprofileid_int = array();
+			foreach($tmp_int['field_collection_item'] as $fckey_int => $fcinfo_int) {
+				$query_int = new EntityFieldQuery;
+				$tmp_int2 = $query_int
+					->entityCondition('entity_type', 'node')
+					->entityCondition('bundle', 'shipper_profile')
+					->fieldCondition('field_delivery_options', 'value', $fckey_int)
+					->execute();
+				foreach($tmp_int2['node'] as $nkey_int=>$nval_int) {
+					$shipperprofileid_int[$fckey_int] = $nkey_int;
+				}
+			}
+			
+			//$shipperprofileid_int now contains all shippers that have matching regions and offer a possibly valid time
+			//now retrieve that time and offer it to the customer as a selection
+			$field_collections_int = entity_load('field_collection_item', array_keys($shipperprofileid_int));
+			
+			foreach($field_collections_int as $fckey_int => $fcinfo_int) {
+				$shipperprofile_int = node_load($shipperprofileid_int[$fckey_int]);
+				$shipperuid_int = $shipperprofile_int->uid;
+				//$returnarray[$shipperprofile->uid . '-' . $deliverytimestamp . '-' . $deliverytimestamp_end . '-' . $deliverytimestamp_int . '-' . $deliverytimestamp_end_int . '-' . 0.00 . '-' . $fckey . '-' . $fckey_int . '-' . $shipperprofile_int->uid] = t('!timewindow at !point (!routing)', $toptions);
+				$returnarray[$shipperuid . '-' . $deliverytimestamp . '-' . $deliverytimestamp_end . '-' . $pickup_range_from . '-' . $deliverytimestamp . '-' . 0.00 . '-' . $fckey . '-' . $fckey_int . '-' . $shipperuid_int] = t('!timewindow', $toptions);
+			}
+		}
+	}
+	return $returnarray;
+}
+
+/**
+ * This function determines available pickup dates for products.
+ *
+ * If used with $cart = TRUE the parameter $product is expected to be
+ * the loaded cart array for one seller, such as $warenkorb[$value->seller_username]['product']
+ *
+ * If used by default the parameter $product is expected to be the nid of a content type "offer"
+ */
+function regiomino_shipping_get_available_pickupdates($product, $type = NULL, $cart = FALSE, $linktoshipper = FALSE, $amounttoshow = 1) {
+	
+	$addtime = date('I', time());
+	if($addtime) {
+		$addtime = 7200;
+	}
+	else {
+		$addtime = 3600;
+	}
+	
+	//Do some initial postprocessing of the given parameters
+	switch($type) {
+		case "bringlivery":
+			$fct = 'field_delivery_options';
+			$profiletype = 'shipper_profile';
+			break;
+		case "centralpickup":
+			$fct = 'field_storage_data';
+			$profiletype = 'storage_profile';
+			break;
+		default:
+			$fct = 'field_delivery_options';
+			$profiletype = 'shipper_profile';
+			break;
+	}
+
+	global $user;
+	$productbackup = $product;
+	if($cart) {
+		//This means, $product is an array as returned by the cart module. Load products nodeobject and userobject of the author(seller)
+		$value['product'] = $product;
+		foreach($value['product'] as $cart_item_id => $everythingelse) {
+			$cartitemid = $cart_item_id;
+		}
+		$product = node_load($value['product'][$cartitemid]['nid']);
+		$selleruser = user_load($product->uid);
+	}
+	else {
+		//This means $product contains the nid of the offer node. Load products nodeobject and userobject of the author(seller)
+		$product = node_load($product);
+		$selleruser = user_load($product->uid);
+	}
+	$sellerprofile = node_load($selleruser->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+	$shippingweight = 0;
+	
+	
+/* 	//Determine the postal code of user for delivery
+	if($user->uid > 0) {
+		$userobject = user_load($user->uid);
+		$delivery_postal_code = $userobject->field_address[LANGUAGE_NONE][0]['postal_code'];
+		if(!$cart && !is_null($_SESSION['geolocation_data']['zipcode'])) $delivery_postal_code = $_SESSION['geolocation_data']['zipcode'];
+	}
+	elseif(!$cart && !is_null($_SESSION['geolocation_data']['zipcode'])) {
+		$delivery_postal_code = $_SESSION['geolocation_data']['zipcode'];
+	}
+	else {
+		return array('0' => t('Please <a href="!login">login</a> to find out which delivery options are available', array('!login' => url('user'))));
+	} */
+	
+	if(isset($_SESSION['geolocation_data']['zipcode']) && !empty($_SESSION['geolocation_data']['zipcode'])) {
+		$delivery_postal_code = $_SESSION['geolocation_data']['zipcode'];
+	}
+	else {
+		return array('0' => t('Please select a region to find out which delivery options are available'));
+	}
+
+	//Fragment the user postal code to be able to compare it against areas (incomplete postal codes)
+	$deliveryfragments = array();
+	for($i=1; $i<=strlen($delivery_postal_code); $i++) {
+		$deliveryfragments[] = substr($delivery_postal_code, 0, $i);
+	}
+	
+	//Determine the postal code of the seller for picking up
+	$pickup_postal_code = $sellerprofile->field_address[LANGUAGE_NONE][0]['postal_code'];
+	
+	//Fragment the seller postal code to be able to compare it against areas (incomplete postal codes)
+	$pickupfragments = array();
+	for($i=1; $i<=strlen($pickup_postal_code); $i++) {
+		$pickupfragments[] = substr($pickup_postal_code, 0, $i);
+	}
+
+	//Determine time frames for picking up
+	if($cart) {
+		//Find out the longest delay time and add up shipping weight
+		$delayarray = array();
+		foreach($value['product'] as $pukey => $puvalue) {
+			$shippingweight += $puvalue['shipping_weight'];
+			$delayarray[] = $puvalue['pickupdelay'];
+		}			
+		sort($delayarray);
+		$delayarray = array_reverse($delayarray);
+		$delay = $delayarray[0] * 3600;
+		
+		//Find out the earliest product-end-date
+		foreach($value['product'] as $pukey => $puvalue) {
+			$enddate = strtotime($puvalue['dauer']);
+			$enddatearray[] = $enddate + 86400;
+		}
+		sort($enddatearray);
+		$productenddate = $enddatearray[0];
+	}
+	else {
+		$delay = $product->field_pickupdelay[LANGUAGE_NONE][0]['value'] * 3600;
+		$productenddate = strtotime($product->field_duration[LANGUAGE_NONE][0]['value']) + 86400;
+	}
+	//$globaldeadline = variable_get('regiomino_offer_deadline', 345600);
+	//Add global deadline to end date of product to get latest day for shipping
+	//$deadline = $productenddate + $globaldeadline;
+	//$deadlinedatetime = new DateTime(date('Y-m-d H:i:s', $deadline));
+	//Add delay time to now, then add 1 day, and then round down to 00:00 on that day to get the earliest day for shipping
+	$beginning = strtotime(date('Y-m-d', time() + $delay) . ' +1 day');
+	
+	//$productenddate -> this is the timestamp when the product is terminated
+	//$deadline -> this is the timestamp a set number of days after the product is terminated. after this deadline no pickup can take place anymore
+	//$delay -> this is the amount of time before the delivery day that the product can't be ordered for this delivery date anymore
+	
+	
+	//task: find shippers within $shipperprofileid hat have a delivery date inbetween $deadline and $beginning
+	//and have delivery and pickup areas that include the users delivery zip and the sellers pickup zip
+	
+	
+	
+	$query = new EntityFieldQuery;
+	$query
+		->entityCondition('entity_type', 'field_collection_item')
+		->entityCondition('bundle', $fct)
+		//->fieldCondition('field_delivery_areas', 'value', $deliveryfragments)
+		->fieldCondition('field_pickup_areas', 'value', $pickupfragments)
+		->fieldCondition('field_delivery_dates', 'value', date("Y-m-d H:i:s", $beginning), '>');
+		
+	switch($type) {
+		case "bringlivery":
+			$query->fieldCondition('field_delivery_areas', 'value', $deliveryfragments);
+			break;
+	}
+	$tmp = $query->execute();
+
+	$shipperprofileid = array();
+	foreach($tmp['field_collection_item'] as $fckey => $fcinfo) {
+		$query = new EntityFieldQuery;
+		$tmp2 = $query
+			->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', $profiletype)
+			->propertyCondition('status', 1)
+			->fieldCondition($fct, 'value', $fckey)
+			->execute();
+		foreach($tmp2['node'] as $nkey=>$nval) {
+			$shipperprofileid[$fckey] = $nkey;
+		}
+	}
+
+	//$shipperprofileid now contains all shippers that have matching regions and offer a possibly valid time
+	//now retrieve that time and offer it to the customer as a selection
+	
+	$field_collections = entity_load('field_collection_item', array_keys($shipperprofileid));
+
+	$returnarray = array();
+	
+	
+	foreach($field_collections as $fckey => $fcinfo) {
+		$counter = 0;
+		$shipperprofile = node_load($shipperprofileid[$fckey]);
+		foreach($fcinfo->field_delivery_dates[LANGUAGE_NONE] as $deliverytimes) {
+			$deliverytimestamp = strtotime($deliverytimes['value']) + $addtime;
+			$deliverytimestamp_end = strtotime($deliverytimes['value2']) + $addtime;
+			if($deliverytimestamp > $beginning) {
+				
+				$toptions = array(
+					'!timewindow' => date('d.m.Y H:i', $deliverytimestamp) . ' - ' . date('H:i', $deliverytimestamp_end),
+					'!price' => t('free'),
+				);
+				if($linktoshipper) {
+					$toptions['!shipper'] = ' <a href="' . url('node/' . $shipperprofile->nid) . '">' . $shipperprofile->title . '</a>';
+				}
+				else {
+					$toptions['!shipper'] = $shipperprofile->title;
+				}
+				//Set pickup range globally to 9 o clock on delivery day
+				$pickup_range_from = strtotime(date('Y-m-d', $deliverytimestamp) . ' 08:00:00');
+				//key of $returnarray is made up of
+				//[shipperuid-beginofdelivery-endofdelivery-beginofpickup-endofpickup-deliverycost-fieldcollectionitemshipper-fieldcollectionitempicker-pickeruid]
+				if($type == 'bringlivery') {
+					//shipper and collector are the same
+					$returnarray[$shipperprofile->uid . '-' . $deliverytimestamp . '-' . $deliverytimestamp_end . '-' . $pickup_range_from . '-' . $deliverytimestamp . '-' . 0.00 . '-' . $fckey . '-' . $fckey . '-' . $shipperprofile->uid] = t('!timewindow (!price)', $toptions);
+					$counter++;
+				}
+				else if($type == 'centralpickup') {
+					$storage_data = field_collection_item_load($fckey);
+					$toptions['!point'] = 'Regiomino Point <strong>' . $storage_data->field_address[LANGUAGE_NONE][0]['locality'] . '</strong>: "' . $storage_data->field_address[LANGUAGE_NONE][0]['name_line'] . '"';
+					$toptions['!routing'] = '<a href="http://maps.google.de/maps?q=' . urlencode($storage_data->field_address[LANGUAGE_NONE][0]['thoroughfare'] . ', ' . $storage_data->field_address[LANGUAGE_NONE][0]['postal_code'] . ' ' . $storage_data->field_address[LANGUAGE_NONE][0]['locality']) . '&t=h&z=17">' . t('Routing') . '</a>';	
+
+					//shipper (storage) and collector (typical shipper) are different, determine suitable shipper for the storage pickuptime
+				
+					//find a shipper that has pickup zones identical to the seller one's and delivery zones identical to the postal code of the storage address
+					//and has a delivery timeframe that is later than $beginning (granulartiy seconds) and earlier or same than $deliverytimestamp (granularity day)
+					//round up deliverytimestamp day to 00:00 the next day to accomplish this
+					$deliverytimestamp_roundup = strtotime(date('Y-m-d', $deliverytimestamp) . ' +1 day');
+					
+					//Determine the postal code of the seller for picking up
+					$storage_postal_code = $shipperprofile->field_address[LANGUAGE_NONE][0]['postal_code'];
+					
+					//Fragment the seller postal code to be able to compare it against areas (incomplete postal codes)
+					$storageplzfragments = array();
+					for($i=1; $i<=strlen($storage_postal_code); $i++) {
+						$storageplzfragments[] = substr($storage_postal_code, 0, $i);
+					}
+					$query_int = new EntityFieldQuery;
+					$tmp_int = $query_int
+						->entityCondition('entity_type', 'field_collection_item')
+						->entityCondition('bundle', 'field_delivery_options')
+						->fieldCondition('field_delivery_areas', 'value', $storageplzfragments)
+						->fieldCondition('field_pickup_areas', 'value', $pickupfragments)
+						->fieldCondition('field_delivery_dates', 'value', date("Y-m-d H:i:s", $beginning), '>')
+						->fieldCondition('field_delivery_dates', 'value', date("Y-m-d H:i:s", $deliverytimestamp_roundup), '<')
+						->execute();
+
+					$shipperprofileid_int = array();
+					foreach($tmp_int['field_collection_item'] as $fckey_int => $fcinfo_int) {
+						$query_int = new EntityFieldQuery;
+						$tmp_int2 = $query_int
+							->entityCondition('entity_type', 'node')
+							->entityCondition('bundle', 'shipper_profile')
+							->fieldCondition('field_delivery_options', 'value', $fckey_int)
+							->execute();
+						foreach($tmp_int2['node'] as $nkey_int=>$nval_int) {
+							$shipperprofileid_int[$fckey_int] = $nkey_int;
+						}
+					}
+					
+					//$shipperprofileid_int now contains all shippers that have matching regions and offer a possibly valid time
+					//now retrieve that time and offer it to the customer as a selection
+					
+					$field_collections_int = entity_load('field_collection_item', array_keys($shipperprofileid_int));
+					
+					foreach($field_collections_int as $fckey_int => $fcinfo_int) {
+						$shipperprofile_int = node_load($shipperprofileid_int[$fckey_int]);
+						foreach($fcinfo_int->field_delivery_dates[LANGUAGE_NONE] as $deliverytimes_int) {
+							$deliverytimestamp_int = strtotime($deliverytimes['value']) + $addtime;
+							$deliverytimestamp_end_int = strtotime($deliverytimes['value2']) + $addtime;
+							$pickup_range_from = strtotime(date('Y-m-d', $deliverytimestamp) . ' 08:00:00');
+							if($deliverytimestamp_int > $beginning && $deliverytimestamp_int < $deliverytimestamp_roundup) {								
+								//$returnarray[$shipperprofile->uid . '-' . $deliverytimestamp . '-' . $deliverytimestamp_end . '-' . $deliverytimestamp_int . '-' . $deliverytimestamp_end_int . '-' . 0.00 . '-' . $fckey . '-' . $fckey_int . '-' . $shipperprofile_int->uid] = t('!timewindow at !point (!routing)', $toptions);
+								$returnarray[$shipperprofile->uid . '-' . $deliverytimestamp . '-' . $deliverytimestamp_end . '-' . $pickup_range_from . '-' . $deliverytimestamp . '-' . 0.00 . '-' . $fckey . '-' . $fckey_int . '-' . $shipperprofile_int->uid] = t('!timewindow at !point (!routing)', $toptions);
+								break;
+							}
+						}
+						break;
+					}
+					$counter++;
+				}
+				if($counter >= $amounttoshow) break;
+			}
+		}
+	}
+	
+	//Check capacities
+	foreach($returnarray as $key=>$value) {
+		$tmp = explode('-', $key);
+		//Get shipper capacities for this time frame
+		$shippercapacity = regiomino_shipping_check_remaining_capacity($tmp[0], $tmp[6], $tmp[1], $tmp[2], $fct);		
+		$expiries = array();
+		if($cart) {
+			//Rename product array and load the userobject of the author(seller)
+			foreach($productbackup as $pukey => $puvalue) {
+				$productobject = node_load($puvalue['nid']);
+				$degrees = $productobject->field_expiry[LANGUAGE_NONE][0]['second'];
+				if(isset($degrees)) {
+					if(isset($expiries[$degrees])) {
+						$expiries[$degrees] += $puvalue['shipping_weight'] * $puvalue['menge'] / 1000;
+					}
+					else {
+						$expiries[$degrees] = $puvalue['shipping_weight'] * $puvalue['menge'] / 1000;
+					}
+				}
+			}
+		}
+		else {
+			$productobject = node_load($productbackup);
+			if(isset($productobject->field_expiry[LANGUAGE_NONE][0]['second'])) $degrees = $productobject->field_expiry[LANGUAGE_NONE][0]['second'];
+			if(isset($degrees)) $expiries[$degrees] = $productobject->field_shippingweight[LANGUAGE_NONE][0]['value'] * 1 / 1000;
+		}
+		if(!empty($expiries)) {
+			foreach($expiries as $exkey=>$exvalue) {
+				if(isset($shippercapacity[$exkey]) && $shippercapacity[$exkey] < $exvalue) unset($returnarray[$key]);
+			}
+		}
+		
+		//Get collector capacities for this time frame
+		$shippercapacity = regiomino_shipping_check_remaining_capacity($tmp[8], $tmp[7], $tmp[3], $tmp[4], $fct);		
+		$expiries = array();
+		if($cart) {
+			//Rename product array and load the userobject of the author(seller)
+			foreach($productbackup as $pukey => $puvalue) {
+				$productobject = node_load($puvalue['nid']);
+				$degrees = $productobject->field_expiry[LANGUAGE_NONE][0]['second'];
+				if(isset($degrees)) {
+					if(isset($expiries[$degrees])) {
+						$expiries[$degrees] += $puvalue['shipping_weight'] * $puvalue['menge'] / 1000;
+					}
+					else {
+						$expiries[$degrees] = $puvalue['shipping_weight'] * $puvalue['menge'] / 1000;
+					}
+				}
+			}
+		}
+		else {
+			$productobject = node_load($productbackup);
+			if(isset($productobject->field_expiry[LANGUAGE_NONE][0]['second'])) $degrees = $productobject->field_expiry[LANGUAGE_NONE][0]['second'];
+			if(isset($degrees)) $expiries[$degrees] = $productobject->field_shippingweight[LANGUAGE_NONE][0]['value'] * 1 / 1000;
+		}
+		if(!empty($expiries)) {
+			foreach($expiries as $exkey=>$exvalue) {
+				if(isset($shippercapacity[$exkey]) && $shippercapacity[$exkey] < $exvalue) unset($returnarray[$key]);
+			}
+		}
+		
+	}
+	return $returnarray;
+}
+
+/**
+ * Determine how much capacity the shipper has left for the given time frame
+ */
+function regiomino_shipping_check_remaining_capacity($uid, $fci, $shipperstarthours, $shipperendhours, $fct = 'field_delivery_options') {
+	$fcsql = db_query("
+		SELECT
+			capacity.field_capacity_first,
+			capacity.field_capacity_second
+		FROM
+			{field_data_field_capacity} capacity
+		WHERE
+			capacity.bundle = :fct AND
+			capacity.entity_id = :fci
+		", array(':fci' => $fci, ':fct' => $fct));
+	
+	$fccapacity = array();
+	foreach($fcsql as $fcrecord) {
+		$fccapacity[$fcrecord->field_capacity_second] = $fcrecord->field_capacity_first;
+	}
+	
+	$fcsql = db_query("
+		SELECT
+			o.nid,
+			o.product_count
+		FROM
+			{regiomino_order_shipping} s,
+			{regiomino_order} o
+		WHERE
+			s.shipping_range_from = :start AND
+			s.shipping_range_to = :end AND
+			s.fci = :fci AND
+			s.uid = :uid AND
+			s.shipping_id = o.shipping
+		", array(
+			':start' => $shipperstarthours,
+			':end' => $shipperendhours,
+			':fci' => $fci,
+			':uid' => $uid,
+		));
+	
+	$fcbookings = array();
+	foreach($fcsql as $fcrecord) {
+		$product = node_load($fcrecord->nid);
+		if(isset($product->field_shippingweight) && !empty($product->field_shippingweight)) $weight = $product->field_shippingweight[LANGUAGE_NONE][0]['value'];
+		$totalweight = $weight * $fcrecord->product_count;
+		if(isset($product->field_expiry) && !empty($product->field_expiry)) $degrees = $product->field_expiry[LANGUAGE_NONE][0]['second'];
+		if(isset($fcbookings[$degrees])) {
+			$fcbookings[$degrees] += $totalweight;
+		}
+		else {
+			$fcbookings[$degrees] = $totalweight;
+		}
+	}
+
+	$fcavailable = $fccapacity;
+	foreach($fccapacity as $key=>$value) {
+		if(!empty($fcbookings[$key])) $fcavailable[$key] -= $fcbookings[$key] / 1000;
+	}
+
+	return $fcavailable;
+}
+
+/* function regiomino_shipping_get_delivery_options($uid, $nodeobject, $sellerprofile) {
+	$options = array();
+	if($uid == 0) {
+		$options[] = t('<a href="@url">Please log in</a>', array('@url' => url('user')));
+	}
+	else {
+		//Detect bringlivery options
+		$bringliveryview = views_get_view('available_bringlivery_men');
+		$bringliveryview->display['default']->display_options['filters']['field_deliveryoptions_value']['value']['value'] = date('Y-m-d', strtotime('+2 days', strtotime($nodeobject->field_duration[LANGUAGE_NONE][0]['value'])));
+		$bringliveryview->execute();
+		$bringliveryresult = $bringliveryview->result;
+		//Weiterverarbeitung der Ergebnisse
+		$userobject = user_load($uid);
+		$country = $userobject->field_address[LANGUAGE_NONE][0]['country'];
+		$zip = $userobject->field_address[LANGUAGE_NONE][0]['postal_code'];
+		$sellerzip = $sellerprofile->field_address[LANGUAGE_NONE][0]['postal_code'];
+
+		foreach($bringliveryresult as $bringliverykey => $bringliveryvalue) {
+			$sellerzipok = FALSE;
+			$userzipok = FALSE;
+			//Alle Ergebnisse herausfiltern, die nicht in die PLZ Bereiche des Users fallen
+			foreach($bringliveryvalue->field_field_deliveryareas as $areakey => $areavalue) {
+				if(substr($zip, 0, strlen($areavalue['raw']['postal_code'])) === $areavalue['raw']['postal_code']) {
+					$userzipok = TRUE;
+				}
+				if(substr($sellerzip, 0, strlen($areavalue['raw']['postal_code'])) === $areavalue['raw']['postal_code']) {
+					$sellerzipok = TRUE;
+				}
+			}
+			if($sellerzipok && $userzipok) {
+				//Menge der aktuellen Beauftragungen für Lieferant auslesen und gegen das Feld Kapazität prüfen
+				$capacity = $bringliveryvalue->field_field_deliverycapacity[0]['raw']['value'];
+				$deliverytimestart = $bringliveryvalue->field_field_deliveryoptions[0]['raw']['value'];
+				$deliverytimeend = $bringliveryvalue->field_field_deliveryoptions[0]['raw']['value2'];
+				
+				$capaquery = db_select('regiomino_order_shipping', 'r')
+					->fields('r', array('shipping_id'))
+					->condition('shipping_range_from', $deliverytimestart)
+					->execute()
+					->rowCount();
+				if($capaquery < $capacity) {
+					if($bringliveryvalue->field_field_price_per_shipment[0]['raw']['value'] == '0.00') {
+						$bringliveryprice = t('free');
+					}
+					else {
+						$bringliveryprice = $bringliveryvalue->field_field_price_per_shipment[0]['rendered']['#markup'];
+					}
+					$newbringliveryarray[$bringliveryvalue->users_node_uid . '-' . $deliverytimestart . '-' . $deliverytimeend . '-' . $bringliveryvalue->field_field_price_per_shipment[0]['raw']['value']] = t('<a href="@profileurl">@shipper</a> (!timewindow)', array(
+						'!timewindow' => date('d.m.Y, H:i', $deliverytimestart) . ' - ' . date('H:i', $deliverytimeend),
+						'@profileurl' => '/node/' . $bringliveryvalue->nid,
+						'@shipper' => $bringliveryvalue->node_title,
+						'!price' => $bringliveryprice,
+					));
+				}
+			}
+		}
+		foreach($newbringliveryarray as $newvalue) {
+			$options[] = $newvalue;
+		}
+		//Set Pickup as an option
+		$shippingtypesvalue = 'Pickup';
+		$latestpickupdate = date('d.m.Y', strtotime('+2 days', strtotime($nodeobject->field_duration[LANGUAGE_NONE][0]['value'])));
+		$options[] = t($shippingtypesvalue) . " " . t('until no later than @date', array('@date' => $latestpickupdate));
+	}
+
+	return $options;
+} */
+
+function regiomino_shipping_get_latestorder($avlbpickupdates, $delay, $duration, $type = 'bringlivery') {
+
+	$returnarray = array('user' => null, 'begin' => null, 'end' => null, 'latestorder' => null);
+	$consolidated = array();
+	
+	$deliveryoptions = array_keys($avlbpickupdates);
+	if($_SESSION['geolocation_data']['type'] == $type && !in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptions)) {
+	}
+	else {
+		foreach($avlbpickupdates as $key=>$value) {
+			$tmp = explode('-', $key);
+			if(count($tmp) > 1) {
+				$returnarray['user'] = $tmp[0];
+				$returnarray['begin'] = $tmp[1];
+				$returnarray['end'] = $tmp[2];
+				$returnarray['fci'] = $tmp[6];
+				$fci_title = field_collection_item_load($tmp[6]);
+				$returnarray['title'] = '';
+				if(isset($fci_title->field_address[LANGUAGE_NONE][0])) $returnarray['title'] = $fci_title->field_address[LANGUAGE_NONE][0]['name_line'] . ' (' . $fci_title->field_address[LANGUAGE_NONE][0]['locality'] . ')';
+
+				$midnightondeliverydate = strtotime(date('Y-m-d', $tmp[3]));
+				$delaytimestamp = $midnightondeliverydate - $delay;
+
+				// if($duration < $delaytimestamp) {
+					// $returnarray['latestorder'] = $duration - 1;
+				// }
+				// else {
+					$returnarray['latestorder'] = $delaytimestamp - 1;
+				//}
+				if($type == 'bringlivery') {
+					break;
+				}
+				else {
+					$consolidated[] = $returnarray;
+				}
+			}
+		}
+	}
+
+	if($type == 'bringlivery') {
+		return $returnarray;
+	}
+	else {
+		return $consolidated;
+	}
+}
+
+/**
+ * Function for retrieving all available shipping types from db and storing them in array
+ */
+function regiomino_shipping_get_shipping_types() {
+	$result = db_select('regiomino_shipping_types', 'st')
+	->fields('st', array('shipping_type_id', 'title'))
+	->execute();
+	$types = array();
+	while($record = $result->fetchAssoc()) {
+		$types[$record['shipping_type_id']] = $record['title'];
+	}
+	return $types;
+}

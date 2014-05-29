@@ -1,0 +1,298 @@
+<?php
+
+function regiomino_featureslider_theme() {
+	return array(
+		'regiomino_featureslider_javascript' => array(
+			'arguments' => array(),
+		),
+		'regiomino_featureslider_theme_highlightslider' => array(
+			'template' => 'regiomino_featureslider_highlightslider_block',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_featureslider_theme_featureslider' => array(
+			'template' => 'regiomino_featureslider_featureslider_block',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+	);
+}
+
+/**
+ * Implements hook_menu().
+ */
+function regiomino_featureslider_menu() {
+  $items = array();
+  $items['regiomino-featureslider-get-featured-callback'] = array(
+    'title' => 'get featured products',
+    'page callback' => 'regiomino_featureslider_get_featured_callback',
+    'access arguments' => array('access content'),
+  );
+	$items['regiomino-featureslider-get-feature-prices'] = array(
+    'title' => 'get prices of featured products',
+    'page callback' => 'regiomino_featureslider_get_feature_prices',
+    'access arguments' => array('access content'),
+  );
+  return $items;
+}
+
+/**
+* Implementation of hook_block_info().
+*/
+function regiomino_featureslider_block_info() {
+  $blocks['regiomino_featureslider'] = array(
+    'info' => t('Regiomino Feature Slider'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+  $blocks['regiomino_highlightslider'] = array(
+    'info' => t('Regiomino Highlight Slider'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+  return $blocks;
+}
+
+/**
+* Implementation of hook_block_view().
+*/
+function regiomino_featureslider_block_view($delta = '') {
+  switch($delta){
+    case 'regiomino_featureslider':
+
+			if(user_access('access content')){
+			
+				$limit = 15 + 4;
+				$offset = 0;
+				$cachingtime = 3600;
+				$forcefillup = 1;
+				$mostsaleseffective = regiomino_offer_most_sales_effective_products(60*60*24*7*20, NULL, $offset, $limit, $cachingtime, $forcefillup);
+
+				
+				// $query = new EntityFieldQuery;
+				// $nodeqry = $query
+				// ->entityCondition('entity_type', 'node')
+				// ->entityCondition('bundle', array('offer'))
+				// ->propertyCondition('status', 1)
+				// ->propertyCondition('soldout', 0)
+				// ->propertyCondition('promote', 1)
+				// ->execute();
+				// $nodeobjects = entity_load('node', array_keys($nodeqry['node']));
+				
+				
+				$products = array();
+				$counter = 0;
+				foreach($mostsaleseffective as $nid => $value) {
+					$counter++;
+					if($counter <= 4) continue;
+					
+					$productimage = array(
+						'style_name' => 'productgrid_sixteen',
+						'path' => $value['node']->field_image[LANGUAGE_NONE][0]['uri'],
+						'title' => $value['node']->title,
+					);
+					$parentcat = taxonomy_term_load($value['node']->field_category[LANGUAGE_NONE][0]['tid']);
+					$products[] = array(
+						'title' => $value['node']->title,
+						'path' => url('node/' . $value['node']->nid),
+						'image' => $value['node']->field_image[LANGUAGE_NONE][0]['uri'],
+						'image_full' => theme('image_style',$productimage),
+						'id' => $value['node']->nid,
+						//'price_discounted' => regiomino_offer_get_discountedprice($value['node']),
+						'price_discounted' => regiomino_offer_get_tradingunit_moneyvalue($value['node'], FALSE, TRUE, 'private', 1, 'field_tu_gross'),
+						'price_original' => regiomino_offer_get_tradingunit_moneyvalue($value['node'], FALSE, TRUE, 'private', 1, 'field_tu_gross'),
+						'unit_first' => $value['node']->field_packingunit[LANGUAGE_NONE][0]['first'],
+						'unit_second' => $value['node']->field_packingunit[LANGUAGE_NONE][0]['second'],
+						'base_price' => regiomino_offer_get_baseprice($value['node']),
+						'category_path' => url('angebote/' . $parentcat->name),
+                                                'img_path' => image_style_url('productgrid_sixteen', $value['node']->field_image[LANGUAGE_NONE][0]['uri']),
+					);
+				}
+				$block['content'] = theme('regiomino_featureslider_theme_featureslider', array(
+															'vars' => array(
+																'products' => $products,
+															),
+														));
+			}
+			return $block;
+			
+		case 'regiomino_highlightslider':
+
+			if(user_access('access content')){
+
+				// $query = new EntityFieldQuery;
+				// $nodeqry = $query
+				// ->entityCondition('entity_type', 'node')
+				// ->entityCondition('bundle', array('highlights'))
+				// ->propertyCondition('status', 1)
+				// ->execute();
+				
+				// $nodeobjects = entity_load('node', array_keys($nodeqry['node']));
+				
+				$limit = 4;
+				$offset = 0;
+				$cachingtime = 3600;
+				$forcefillup = 1;
+				$mostsaleseffective = regiomino_offer_most_sales_effective_products(60*60*24*7*20, NULL, $offset, $limit, $cachingtime, $forcefillup);
+				
+				$sliderelements = array();
+				foreach($mostsaleseffective as $nid=>$value) {
+					//Berechnungen
+					$sliderimage = array(
+						'style_name' => 'highlightslider',
+						'path' => $value['node']->field_image[LANGUAGE_NONE][0]['uri'],
+						'width' => '',
+						'height' => '',
+						'alt' => $value['node']->field_image[LANGUAGE_NONE][0]['alt'],
+						'title' => $value['node']->field_image[LANGUAGE_NONE][0]['title'],
+						'attributes' => array('class' => 'highlightslider_image'),
+					);
+					$sellerprofile = node_load(user_load($value['node']->uid)->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+					
+					$body = '<p><strong>von ' . l($sellerprofile->title, 'node/' . $sellerprofile->nid) . ' aus ' . $sellerprofile->field_address[LANGUAGE_NONE][0]['locality'] . '</strong></p><p>';
+					if(mb_strlen($value['node']->body[LANGUAGE_NONE][0]['value']) > 400) {
+						$body .= strip_tags(mb_substr($value['node']->body[LANGUAGE_NONE][0]['value'], 0, 400) . '...');
+					}
+					else {
+						$body .= strip_tags($value['node']->body[LANGUAGE_NONE][0]['value']);
+					}
+					$body .= '</p><p>' . l('Jetzt ansehen', 'node/' . $nid, array('attributes' => array('class' => 'highlightbutton'))) . '</p>';
+					$sliderelements[] = array(
+						'title' => $value['node']->title,
+						'link' => l($value['node']->title, 'node/' . $nid),
+						'link_url' => url('node/' . $nid),
+						'body' => $body,
+						'img' => theme('image_style', $sliderimage),
+                                                'img_path' => image_style_url('highlightslider', $value['node']->field_image[LANGUAGE_NONE][0]['uri']),
+					);
+				}
+				
+				$block['content'] = theme('regiomino_featureslider_theme_highlightslider', array(
+															'vars' => array(
+																'sliderelements' => $sliderelements,
+															),
+														));
+			}
+			return $block;  
+	}
+}
+
+/**
+ * Implements hook_views_pre_render().
+ */
+/* function regiomino_featureslider_views_pre_render(&$view) {
+  $results = &$view->result;
+  foreach ($results as $key => $result) {
+    if ($view->name == 'frontpage_carousel' OR $view->name == 'jqm_frontpage') {
+			$nid = $result->_field_data['nid']['entity']->nid;
+			$nodeobject = node_load($nid);
+			$discountedprice = regiomino_offer_get_discountedprice($nodeobject, TRUE);
+
+			if($discountedprice != $results[$key]->field_field_price[0]['rendered']['#markup']) {
+				$results[$key]->field_field_price[0]['rendered']['#markup'] = '<span class="orgprice">' . $results[$key]->field_field_price[0]['rendered']['#markup'] . '</span> ' . $discountedprice;
+			}
+			else {
+				$results[$key]->field_field_price[0]['rendered']['#markup'] = $discountedprice;
+			}
+    }
+  }
+} */
+
+function regiomino_featureslider_get_featured_callback() {
+
+	/* $lat = $_POST['lat'];
+	$lon = $_POST['lng'];
+	
+	$output = '
+	
+	<div class="view view-feature-slider view-id-feature_slider view-display-id-block view-dom-id-">
+		<div class="view-content">
+			<div class="item-list">
+				<div class="jcarousel-skin-regiomino">
+					<ul>
+						
+						<li class="views-row views-row-1 views-row-odd views-row-first">  
+							
+							<div class="views-field views-field-title">
+								<span class="field-content">
+									<a href="/angebot/schnittk%C3%A4se-natur-30">Schnittkäse natur</a>
+								</span> 
+							</div>  
+							
+							<div class="views-field views-field-field-packingunit">
+								<div class="field-content">
+									<span class="price 6377">1,45 €</span>
+									pro
+									<div class="container-inline">
+										<div class="double-field-first">100</div>
+										<div class="double-field-second">g</div>
+									</div>
+								</div>
+							</div>
+							
+							<div class="views-field views-field-field-image">
+								<div class="field-content">
+									<a href="/angebot/schnittk%C3%A4se-natur-30">
+										<img typeof="foaf:Image" src="http://dev.mitlieferdienst.de/sites/default/files/styles/thumbnail/public/productimageuploads/hans-rudolph%40gmx.de/91096moe_oms_schnittkaese_natur.jpg?itok=CPKii14M" width="170" height="133" alt="" />
+									</a>
+								</div>
+							</div>  
+
+							<div class="views-field views-field-field-geofield-distance">
+								<span class="field-content">
+									<a href="/anbieter/oberndorfer-morgentau-spargel">Oberndorfer Morgentau-Spargel</a> in Möhrendorf
+								</span>
+							</div>
+							
+						</li>
+						
+					</ul>
+				</div>
+			</div>
+		</div>	
+	</div>
+	
+	
+	
+	'; */
+
+ 	//Anpassen der Distanz-Sortierung
+	$view = views_get_view("feature_slider");
+
+	//insert latitude and longitude into views source of origin point for sorting (nearest location first)
+	$view->display['default']->display_options['sorts']['field_geofield_distance']['source_lat'] = $_POST['lat'];
+	$view->display['default']->display_options['sorts']['field_geofield_distance']['source_lon'] = $_POST['lng'];
+	//insert latitude and longitude into views source of origin point for displaying distance (in km)
+	$view->display['default']->display_options['fields']['field_geofield_distance']['source_lat'] = $_POST['lat'];
+	$view->display['default']->display_options['fields']['field_geofield_distance']['source_lon'] = $_POST['lng'];
+
+	$display_id = 'block';
+	if (empty($view->current_display) || ((!empty($display_id)) && $view->current_display != $display_id)) {
+    if (!$view->set_display($display_id)) {
+      return FALSE;
+    }
+  }
+	$output = $view->display_handler->preview();
+  $view->post_execute();
+	
+	
+	print $output;
+}
+
+function regiomino_featureslider_get_feature_prices() {
+
+	$nid = $_POST['nid'];
+	$nodeobject = node_load($nid);
+	//$discountedprice = regiomino_offer_get_discountedprice($nodeobject, TRUE);
+	$discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, TRUE, TRUE, 'private', 1, 'field_tu_gross');
+	
+
+	if($discountedprice != $_POST['currentprice']) {
+		$output = '<span class="orgprice">' . $_POST['currentprice'] . '</span> ' . $discountedprice;
+	}
+	else {
+		$output = $_POST['currentprice'];
+	}
+	
+	print $output;
+}

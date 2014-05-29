@@ -1,0 +1,5 @@
+name = Regiomino Menu
+description = Creates a superfish dropdown menu from Regiomino category vocabulary
+core = 7.x
+package = Regiomino
+dependencies[] = menu

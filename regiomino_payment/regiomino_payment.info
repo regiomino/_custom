@@ -1,0 +1,5 @@
+name = Regiomino Payment
+description = Defines payment table from regiomino_order as an entity
+core = 7.x
+package = Regiomino
+files[] = regiomino_payment.module

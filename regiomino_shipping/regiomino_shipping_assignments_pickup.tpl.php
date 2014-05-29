@@ -1,0 +1,1 @@
+theme this in themefolder/templates/regiomino_shipping_theme_assignments_pickup.tpl.php

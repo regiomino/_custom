@@ -1,0 +1,50 @@
+<?php
+
+/**
+ * Implementation of hook_schema().
+ */
+function regiomino_offer_schema(){
+
+	$schema = array();	
+		
+	$schema['regiomino_offer_clonehistory'] = array(
+    'description' => 'History of cloned offer nodes',
+    'fields' => array(
+      'hid' => array(
+        'description' => 'Primary key: the clone history ID.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE
+      ),
+			'ancestor' => array(
+        'description' => 'The {node}.nid of the ancestor product.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+			'descendant' => array(
+        'description' => 'The {node}.nid of the descendant product.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'changed' => array(
+        'description' => 'The Unix timestamp indicating the time the node was cloned.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('hid'),
+  );
+
+  return $schema;
+}
+
+function regiomino_offer_install() {
+}
+
+function regiomino_offer_uninstall() {
+}

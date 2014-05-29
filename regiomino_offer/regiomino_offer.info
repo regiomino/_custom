@@ -1,0 +1,6 @@
+name = Regiomino Offer
+description = Regiomino offer methods
+core = 7.x
+package = Regiomino
+configure = admin/config/regiomino/offer
+files[] = regiomino_offer.module

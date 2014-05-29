@@ -1,0 +1,79 @@
+<?php
+/**
+ * Implements hook_entity_info().
+ *
+ * This informs Drupal about an order being an entity and includes the custom db table
+ */
+function regiomino_payment_entity_info() {
+  $return = array(
+    'regiomino_order_payment' => array(
+      'label' => t('Regiomino Payment Agreement'),
+      'entity class' => 'Entity',
+      'controller class' => 'EntityAPIController',
+      'base table' => 'regiomino_order_payment',
+      'fieldable' => TRUE,
+      'entity keys' => array(
+        'id' => 'payment_id',
+        'label' => 'payment_id',
+      ),
+      'bundles' => array(),
+      'load hook' => 'regiomino_payment_load',
+      'view modes' => array(
+        'full' => array(
+          'label' => t('Default'),
+          'custom settings' => FALSE,
+        ),
+      ),
+      'label callback' => 'entity_class_label',
+      'uri callback' => 'entity_class_uri',
+      'module' => 'regiomino_payment',
+      'access callback' => 'regiomino_payment_access',
+    ),	
+    'regiomino_payment_types' => array(
+      'label' => t('Regiomino Payment Types'),
+      'entity class' => 'Entity',
+      'controller class' => 'EntityAPIController',
+      'base table' => 'regiomino_payment_types',
+      'fieldable' => FALSE,
+      'entity keys' => array(
+        'id' => 'payment_id',
+      ),
+      'bundles' => array(),
+      'load hook' => 'regiomino_payment_load',
+      'view modes' => array(
+        'full' => array(
+          'label' => t('Default'),
+          'custom settings' => FALSE,
+        ),
+      ),
+      'label callback' => 'entity_class_label',
+      'uri callback' => 'entity_class_uri',
+      'module' => 'regiomino_payment',
+      'access callback' => 'regiomino_payment_access',
+    ),		
+  );
+  return $return;
+}
+
+/**
+ * Implements hook_entity_property_info_alter().
+ *
+ * This ensures that order entities can be accessed through views and relationships
+ */
+function regiomino_payment_entity_property_info_alter(&$info) {
+  $properties = &$info['regiomino_order_payment']['properties'];
+	$properties['payment_type'] = array(
+    'label' => t("Payment Type"),
+    'type' => 'regiomino_payment_types',
+    'description' => t("Regiomino Payment Type"),
+    'required' => TRUE,
+    'schema field' => 'payment_type',
+  );
+	$properties['invoice'] = array(
+    'label' => t("Invoice"),
+    'type' => 'node',
+    'description' => t("Invoice"),
+    'required' => TRUE,
+    'schema field' => 'nid',
+  );
+}

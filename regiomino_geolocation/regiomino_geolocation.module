@@ -1,0 +1,692 @@
+<?php
+
+/**
+ * Implements hook_init()
+ */
+function regiomino_geolocation_init() {
+
+	$params = drupal_get_query_parameters();
+	if(isset($params['resetloc']) && $params['resetloc'] == '1') {
+		unset($_SESSION['geolocation_data']);
+		regiomino_cart_delete_cart();	
+		drupal_goto(current_path());
+	}
+
+	if(isset($_SESSION['geolocation_data']['deliveryoption'])) {
+		$deliveryoption = explode('-', $_SESSION['geolocation_data']['deliveryoption']);
+		$deadline = strtotime(date('d.m.Y', $deliveryoption[1]));
+		$time = time();
+		if($deadline < $time) {
+			unset($_SESSION['geolocation_data']);
+			regiomino_cart_delete_cart();	
+			drupal_goto(current_path());
+		}
+	}
+	
+	theme('regiomino_geolocation_javascript');
+}
+
+/**
+ * Implements hook_menu().
+ */
+function regiomino_geolocation_menu() {
+  $items = array();
+  $items['regiomino-geolocation-latlonginfo'] = array(
+    'page callback' => 'regiomino_geolocation_latlonginfo',
+    'access arguments' => array('access content'),
+  );
+  $items['regiomino-geolocation-zipcodeinfo'] = array(
+    'page callback' => 'regiomino_geolocation_zipcodeinfo',
+    'access arguments' => array('access content'),
+  );
+	$items['admin/config/regiomino/geodb'] = array(
+    'title' => 'Regiomino geodb settings',
+    'description' => 'Make settings for regiomino geodb.',
+    'page callback' => 'drupal_get_form', // function called when path is requested
+    'page arguments' => array('regiomino_geolocation_admin_settings'), // form id passed to the function
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'regiomino_geolocation.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_geolocation'),
+  );
+  $items['regiomino-geolocation-participantxml'] = array(
+    'page callback' => 'regiomino_geolocation_get_participantxml',
+    'access arguments' => array('access content'),
+  );
+	
+  return $items;
+}
+
+function regiomino_geolocation_latlonginfo() {
+	global $user;
+	if ($user->uid) {
+		$loggedin = $user->uid;
+	}
+	else {
+		$loggedin = session_id();
+	}
+	$db = db_insert('regiomino_geoloc_locations')
+		->fields(array(
+			'uid' => $loggedin,
+			'timestamp' => time(),
+			'host' => ip_address(),
+			'session' => session_id(),
+			'geolat' => $_POST['lat'],
+			'geolon' => $_POST['lng'],
+			'geoloc' => $_POST['loc'],
+		))
+		->execute();
+}
+
+function regiomino_geolocation_zipcodeinfo() {
+	global $user;
+	if ($user->uid) {
+		$loggedin = $user->uid;
+	}
+	else {
+		$loggedin = session_id();
+	}
+	$db = db_insert('regiomino_geoloc_zipcode_entries')
+		->fields(array(
+			'uid' => $loggedin,
+			'zipcode' => $_POST['zipcode'],
+			'timestamp' => time(),
+			'host' => ip_address(),
+			'session' => session_id(),
+			'geolat' => $_POST['lat'],
+			'geolon' => $_POST['lng'],
+			'geoloc' => $_POST['loc'],
+		))
+		->execute();
+}
+
+function regiomino_geolocation_theme() {
+	return array(
+		'regiomino_geolocation_javascript' => array(
+			'arguments' => array(),
+		),
+		'regiomino_geolocation_theme_map' => array(
+			'template' => 'regiomino_geolocation_geolocation_map',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_geolocation_theme_request' => array(
+			'template' => 'regiomino_geolocation_geolocation_request',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+		'regiomino_geolocation_theme_display' => array(
+			'template' => 'regiomino_geolocation_geolocation_display',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
+	);
+}
+
+function theme_regiomino_geolocation_javascript() {
+	
+	/* if(drupal_is_front_page()) {
+		drupal_add_js(drupal_get_path('module', 'regiomino_featureslider') . '/js/jquery.jcarousel.min.js');
+		drupal_add_js(drupal_get_path('module', 'regiomino_featureslider') . '/js/regiomino_featureslider.js', array('weight' => 30));
+	} */
+	
+	if(isset($_SESSION['geolocation_data']) && !empty($_SESSION['geolocation_data'])) {
+		drupal_add_js(array(
+			'DRUPAL_VISITOR_LATITUDE' => $_SESSION['geolocation_data']['latitude'],
+			'DRUPAL_VISITOR_LONGITUDE' => $_SESSION['geolocation_data']['longitude'],
+			'DRUPAL_VISITOR_CITY' => $_SESSION['geolocation_data']['locality'],
+			'DRUPAL_VISITOR_POSTALCODE', $_SESSION['geolocation_data']['zipcode'],
+		), 'setting');
+	}
+	
+	drupal_add_library('system', 'ui.widget');
+	drupal_add_library('system', 'ui.dialog');
+
+}
+
+
+/*
+ * Hook implementations for the OpenLayers interface.
+ */
+/* DEFINE('BIOMINO_GEOLOCATION_VISITOR_MARKER_LAYER', 'regiomino_geolocation_visitor_marker_layer');
+DEFINE('BIOMINO_GEOLOCATION_MARKER_LAYER', 'regiomino_geolocation_marker_layer');
+DEFINE('BIOMINO_GEOLOCATION_DEF_NUM_MARKER_LAYERS', 3); */
+
+/**
+ * Implements hook_openlayers_map_preprocess_alter($map)
+ *
+ * Add or alter map before main processing. Add styles, behaviors, layers....
+ * Called from openlayers_build_map().
+ * At this point center, zoom level etc. have already been initialised from the
+ * Map configuration page.
+ */
+/* function regiomino_geolocation_openlayers_map_preprocess_alter(&$map) {
+
+//$map['center']['initial']['zoom'] = 5;
+
+  // Introduce a number of layers that will be created below in function
+  // ip_geoloc_openlayers_layers().
+  $map['layers'][BIOMINO_GEOLOCATION_VISITOR_MARKER_LAYER] = BIOMINO_GEOLOCATION_VISITOR_MARKER_LAYER;
+
+  $num_marker_layers = variable_get('regiomino_geolocation_num_location_marker_layers', BIOMINO_GEOLOCATION_DEF_NUM_MARKER_LAYERS);
+  for ($layer = 1; $layer <= $num_marker_layers; $layer++) {
+    $map['layers'         ][BIOMINO_GEOLOCATION_MARKER_LAYER . $layer] = BIOMINO_GEOLOCATION_MARKER_LAYER . $layer;
+    $map['layer_activated'][BIOMINO_GEOLOCATION_MARKER_LAYER . $layer] = BIOMINO_GEOLOCATION_MARKER_LAYER . $layer;
+    // Markers may be switched on/off via a tickbox on the rendered map, if so
+    // configured on page /admin/structure/openlayers/maps/<map_name>/edit,
+    // vertical tab "Layers & Styles", bottom section "Overlay layers"
+    // Programmatically, you'd do this like so:
+    // $map['layer_switcher'][BIOMINO_GEOLOCATION_MARKER_LAYER . $layer] = BIOMINO_GEOLOCATION_MARKER_LAYER . $layer;
+  }
+} */
+
+/**
+ * Implements hook_ctools_plugin_api().
+ *
+ * Required to add a layer to OpenLayers, see ip_geoloc_openlayers_layers().
+ */
+/* function regiomino_geolocation_ctools_plugin_api($module, $api) {
+  if ($module == 'openlayers' && $api == 'openlayers_layers') {
+    return array('version' => 1);
+  }
+} */
+
+/**
+ * Implements hook_openlayers_layers().
+ *
+ * Called via ctools in the heart of openlayers_build_map().
+ * This function has no arguments, so layers are added unconditionally, unless
+ * globals are used.
+ */
+/* function regiomino_geolocation_openlayers_layers() {
+  $layers = array();
+  $visitor_layer = new stdClass();
+  $visitor_layer->api_version = 1;
+  $visitor_layer->name = BIOMINO_GEOLOCATION_VISITOR_MARKER_LAYER;
+  $visitor_layer->title = 'Current visitor marker';
+  $visitor_layer->description = "Layer to mark visitor's current position.";
+  $visitor_layer->weight = -10;
+  $visitor_layer->data = array(
+    'baselayer' => FALSE,
+    'layer_type' => 'openlayers_layer_type_raw',
+    'projection' => array('900913')
+  );
+  // Add the visitor's location as a single feature in its own layer, so
+  // that it may be separately styled (eg marker colour) and activated on page
+  // admin/structure/openlayers/maps/<map-name>/edit
+  if (isset($_COOKIE["userlocation_lng"])) {
+    $longitude = $_COOKIE["userlocation_lng"];
+    $latitude  = $_COOKIE["userlocation_lat"];
+    $visitor_layer->data['features'][] = array(
+      'attributes' => array('name' => t('Your retrieved location.')),
+      'wkt' => "POINT($longitude $latitude)",
+      'projection' => '4326'
+    );
+  }
+  $layers[$visitor_layer->name] = $visitor_layer;
+
+  $num_marker_layers = variable_get('regiomino_geolocation_num_location_marker_layers', BIOMINO_GEOLOCATION_DEF_NUM_MARKER_LAYERS);
+  for ($layer = 1; $layer <= $num_marker_layers; $layer++) {
+    $marker_layer = new stdClass();
+    $marker_layer->api_version = 1;
+    $marker_layer->name = BIOMINO_GEOLOCATION_MARKER_LAYER . $layer;
+    $marker_layer->title = "Location markers #$layer";
+    $marker_layer->description = "Layer to map a view's locations.";
+    $marker_layer->weight = $visitor_layer->weight + $layer;
+    $marker_layer->data = array(
+      'baselayer' => FALSE,
+      'layer_type' => 'openlayers_layer_type_raw',
+      'projection' => array('900913')
+    );
+    // Features, ie. location markers, are added based on the view output, see
+    // file ip_geoloc_plugin_style_openlaysers.inc
+    $layers[$marker_layer->name] = $marker_layer;
+  }
+
+  //cache_set('ip_geoloc_layer_cache', $layers);
+  return $layers;
+} */
+
+/**
+ * Implements hook_openlayers_map_alter().
+ *
+ * Called at the end of openlayers_build_map().
+ */
+/* function regiomino_geolocation_openlayers_map_alter(&$map) {
+  return;
+} */
+
+
+/**
+* Implementation of hook_block_info().
+*/
+function regiomino_geolocation_block_info() {
+   $blocks['regiomino_geolocation_request'] = array(
+    'info' => t('Regiomino Geolocation Request'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+  $blocks['regiomino_geolocation_entry'] = array(
+    'info' => t('Regiomino Geolocation Entry'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+  $blocks['regiomino_geolocation_map'] = array(
+    'info' => t('Regiomino Geolocation Map'), //The name that will appear in the block list.
+    'cache' => DRUPAL_NO_CACHE, //Default
+  );
+  return $blocks;
+}
+
+function regiomino_geolocation_get_participantxml() {
+	
+	$time = time();
+	$cacheexpire = $time - 86400;
+	//Get children of parent item (cache this)
+	$cached = cache_get('regiominogeolocation_map');
+	if($cached && $cached->created > $cacheexpire) {
+		$participants = $cached->data;
+	}
+	else {
+		cache_clear_all('regiominogeolocation_map', 'cache', TRUE);
+		
+		$query = new EntityFieldQuery();
+		$partqry = $query
+			->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', array('storage_profile', 'shipper_profile', 'seller_profile'))
+			->propertyCondition('status', 1)
+			->execute();
+		$participantobjects = entity_load('node', array_keys($partqry['node']));
+		
+		$participants = array();
+		foreach($participantobjects as $nid=>$value) {
+			if($value->type == 'storage_profile') {
+				foreach($value->field_storage_data[LANGUAGE_NONE] as $fciid) {
+					$fci = field_collection_item_load($fciid);
+					$address = $fci->field_address[LANGUAGE_NONE][0]['thoroughfare'];
+					if(isset($fci->field_address[LANGUAGE_NONE][0]['premise']) && !empty($fci->field_address[LANGUAGE_NONE][0]['premise'])) {
+						$address .= ', ' . $fci->field_address[LANGUAGE_NONE][0]['premise'];
+					}
+					$address .= ', ' . $fci->field_address[LANGUAGE_NONE][0]['postal_code'];
+					$address .= ' ' . $fci->field_address[LANGUAGE_NONE][0]['locality'];
+					$participants['storage_profile'][] = array(
+						'title' => 'Regiomino Point ' . $fci->field_address[LANGUAGE_NONE][0]['name_line'],
+						'address' => $address,
+						'lat' => $fci->field_location[LANGUAGE_NONE][0]['lat'],
+						'lon' => $fci->field_location[LANGUAGE_NONE][0]['lon'],
+					);
+				}
+			}
+			else {
+				$address = $value->field_address[LANGUAGE_NONE][0]['thoroughfare'];
+				if(isset($value->field_address[LANGUAGE_NONE][0]['premise']) && !empty($value->field_address[LANGUAGE_NONE][0]['premise'])) {
+					$address .= ', ' . $value->field_address[LANGUAGE_NONE][0]['premise'];
+				}
+				$address .= ', ' . $value->field_address[LANGUAGE_NONE][0]['postal_code'];
+				$address .= ' ' . $value->field_address[LANGUAGE_NONE][0]['locality'];
+				$participants[$value->type][] = array(
+					'title' => l($value->title, 'node/' . $nid),
+					'address' => $address,
+					'lat' => $value->field_location[LANGUAGE_NONE][0]['lat'],
+					'lon' => $value->field_location[LANGUAGE_NONE][0]['lon'],
+				);
+			}
+		}
+		
+		cache_set('regiominogeolocation_map', $participants);
+	}
+
+
+	$dom = new DOMDocument("1.0");
+	$node = $dom->createElement("markers");
+	$parnode = $dom->appendChild($node);
+	
+	header("Content-type: text/xml"); 
+	
+	// Iterate through the rows, adding XML nodes for each
+	foreach($participants as $type=>$more) {
+		foreach($more as $key=>$row) {
+			// ADD TO XML DOCUMENT NODE  
+			$node = $dom->createElement("marker");  
+			$newnode = $parnode->appendChild($node);   
+			$newnode->setAttribute("name",$row['title']);
+			$newnode->setAttribute("address", $row['address']);  
+			$newnode->setAttribute("lat", $row['lat']);  
+			$newnode->setAttribute("lng", $row['lon']);  
+			$newnode->setAttribute("type", $type);
+		}
+	} 
+
+	echo $dom->saveXML();
+}
+
+/**
+* Implementation of hook_block_view().
+*/
+function regiomino_geolocation_block_view($delta = '') {
+  switch($delta){
+	
+		case 'regiomino_geolocation_map':
+		
+			if(user_access('access content')){
+			
+				drupal_add_js('https://maps.googleapis.com/maps/api/js?sensor=false', 'external');
+				drupal_add_js(drupal_get_path('module', 'regiomino_geolocation') . '/js/map.js');
+				
+				//Create form for entering zip code
+				$block['content'] = theme('regiomino_geolocation_theme_map', array(
+															'vars' => array(
+																'text' => node_load(3901),
+															),
+														));
+				
+			}
+			return $block;
+
+    case 'regiomino_geolocation_entry':
+		
+			if(user_access('access content')){
+			
+				//Create form for entering zip code
+				$block['content'] = theme('regiomino_geolocation_theme_request', array(
+															'vars' => array(
+																'form_zipcode' => drupal_render(drupal_get_form('regiomino_geolocation_zip_code_entry')),
+																'form_rmpoint' => drupal_render(drupal_get_form('regiomino_geolocation_rm_point_entry')),
+																//'regiomino_geodb_avlbregions' => variable_get('regiomino_geodb_avlbregions'),
+																//'regiomino_geodb_avlbpoints' => variable_get('regiomino_geodb_avlbpoints'),
+															),
+														)); 
+				
+			}
+			return $block;
+
+		case 'regiomino_geolocation_request':
+		
+			if(user_access('access content')){
+				
+				$loadedcart = regiomino_cart_load_cart();
+				$cartfilled = FALSE;
+				if(!empty($loadedcart)) $cartfilled = TRUE;
+				$deliveryoption = explode('-', $_SESSION['geolocation_data']['deliveryoption']);
+				$block['content'] = theme('regiomino_geolocation_theme_display', array(
+															'vars' => array(
+																'geoloc_zip' => $_SESSION['geolocation_data']['zipcode'],
+																'geoloc_loc' => $_SESSION['geolocation_data']['locality'],
+																'geoloc_type' => $_SESSION['geolocation_data']['type'],
+																'geoloc_option' => $_SESSION['geolocation_data']['deliveryoption'],
+																'timewindow' => date('d.m.Y H:i', $deliveryoption[1]) . '-' . date('H:i', $deliveryoption[2]),
+																'resetpath' => url(current_path(), array('query' => array('resetloc' => '1'))),
+																'cartfilled' => $cartfilled,
+															),
+														));
+				
+			}
+			return $block;  
+	}
+}
+
+function _ajax_return_zipcode_availabledates($form, $form_state) {
+	return $form['regiomino_geolocation_zipcode']['availabledates'];
+}
+
+function _ajax_return_rmpoint_availabledates($form, $form_state) {
+	return $form['regiomino_geolocation_rmpoint']['availablepickupdates'];
+}
+
+function regiomino_geolocation_zip_code_entry($form, &$form_state) {	
+	$form['regiomino_geolocation_zipcode']['zipcode'] = array(
+		'#type' => 'select',
+		'#size' => 1,
+		'#empty_option' => '- ' . t('Where can Regiomino deliver your order?') . ' -',
+		'#ajax' => array(
+			'callback' => '_ajax_return_zipcode_availabledates',
+			'wrapper' => 'divaroundsecondzipdropdown'
+		),
+	);
+	$avlbregions = variable_get('regiomino_geodb_avlbregions');
+
+	$options_zipcodes = array();
+	foreach($avlbregions as $zip => $more) {
+		foreach($more as $key=>$value) {
+			$options_zipcodes[$zip . '-' . $key] = $zip . ' ' . $value['name'];
+		}
+	}
+	$form['regiomino_geolocation_zipcode']['zipcode']['#options'] = $options_zipcodes;
+
+	if(isset($form_state['values']['zipcode'])) {
+		$newzipcode = explode('-', $form_state['values']['zipcode']);
+	}
+	else {
+		$newzipcode[0] = '96052';
+	}
+	$options_dates = regiomino_shipping_get_regional_deliveryoptions($newzipcode[0], 1);
+
+	
+	$form['regiomino_geolocation_zipcode']['availabledates'] = array(
+		'#type' => 'select',
+		'#title' => t('When would you like your products to be delivered?'),
+		'#size' => 1,
+		'#options' => $options_dates,
+		'#prefix' => '<div id="divaroundsecondzipdropdown">',
+		'#suffix' => '</div>',
+		'#states'=>array(
+			'visible'=>array(
+				':input[name="zipcode"]' => array(
+					'value'=>$options_zipcodes,
+				),
+			),
+		),
+	);
+	$form['regiomino_geolocation_zipcode']['submit-zipcode'] = array(
+		'#type' => 'submit',
+		'#value' => t('OK'),
+	);
+	return $form;
+}
+
+function regiomino_geolocation_rm_point_entry($form, &$form_state) {
+	$avlbpoints = variable_get('regiomino_geodb_avlbpoints');
+	$form['regiomino_geolocation_rmpoint']['rmpoint'] = array(
+		'#type' => 'select',
+		'#size' => 1,
+		'#empty_option' => '- ' . t('Where would you like to pickup your order?') . ' -',
+		'#options' => $avlbpoints,
+		'#ajax' => array(
+			'callback' => '_ajax_return_rmpoint_availabledates',
+			'wrapper' => 'divaroundsecondpickdropdown'
+		),
+	);
+	
+	if(isset($form_state['values']['rmpoint'])) {
+		$fci = $form_state['values']['rmpoint'];
+	}
+	else {
+		$fci = '16';
+	}
+	$options_dates = regiomino_shipping_get_regional_pickupoptions($fci, 1);
+
+	$form['regiomino_geolocation_rmpoint']['availablepickupdates'] = array(
+		'#type' => 'select',
+		'#title' => t('When would you like to pick up your product?'),
+		'#size' => 1,
+		'#options' => $options_dates,
+		'#prefix' => '<div id="divaroundsecondpickdropdown">',
+		'#suffix' => '</div>',
+		'#states'=>array(
+			'visible'=>array(
+				':input[name="rmpoint"]' => array(
+					'value'=>$avlbpoints,
+				),
+			),
+		),
+	);
+	$form['regiomino_geolocation_rmpoint']['submit-rmpoint'] = array(
+		'#type' => 'submit',
+		'#value' => t('OK'),
+	);
+	return $form;
+}
+
+function regiomino_geolocation_rm_point_entry_validate($form, &$form_state) {
+	$error = regiomino_geolocation_avlbmatch($form_state['values']['rmpoint'], 'regiomino_geodb_avlbpoints');
+	if($error) form_set_error('rmpoint', t("Unfortunately we can't deliver our products to the zip code you entered. If you wish to see our product range anyway, please select one of our pickup points."));
+}
+
+function regiomino_geolocation_zip_code_entry_validate($form, &$form_state) {
+	$error = regiomino_geolocation_avlbmatch($form_state['values']['zipcode'], 'regiomino_geodb_avlbregions');
+	if($error) form_set_error('zipcode', t("Unfortunately we do not have a pickup point in your region. If you are unsure what to enter, please select an existing point from the list below."));
+}
+
+function regiomino_geolocation_rm_point_entry_submit($form, &$form_state) {
+	regiomino_geolocation_set_sessiondata($form_state['values']['rmpoint'], 'centralpickup', $form_state['values']['availablepickupdates']);
+}
+
+function regiomino_geolocation_zip_code_entry_submit($form, &$form_state) {
+	regiomino_geolocation_set_sessiondata($form_state['values']['zipcode'], 'bringlivery', $form_state['values']['availabledates']);
+}
+
+function regiomino_geolocation_set_sessiondata($values, $type, $deliveryoption) {
+	if($type == 'centralpickup') {
+		$regions = variable_get('regiomino_geodb_avlbpoints');
+		$tmp = explode(' ', $regions[$values]);
+		$zipcode = $tmp[0];
+		$locality = str_replace($tmp[0] . ' ', '', $regions[$values]);
+		$tmp = explode('-', $deliveryoption);
+		$options_dates = regiomino_shipping_get_regional_pickupoptions($values, 1);
+		$optionsdates = array_keys($options_dates);
+		if(!in_array($deliveryoption, $optionsdates)) {
+			$deliveryoption = $optionsdates[0];
+		}
+	}
+	else {
+		$zipcodetmp = explode('-', $values);
+		$zipcode = $zipcodetmp[0];
+		
+		$options_dates = regiomino_shipping_get_regional_deliveryoptions($zipcode, 1);
+		$optionsdates = array_keys($options_dates);
+		if(!in_array($deliveryoption, $optionsdates)) {
+			$deliveryoption = $optionsdates[0];
+		}
+	}
+	$index = 0;
+	if(isset($zipcodetmp[1]))	$index = $zipcodetmp[1];
+	$regiomino_geodb_avlbregions = variable_get('regiomino_geodb_avlbregions');
+	if(!isset($locality)) $locality = $regiomino_geodb_avlbregions[$zipcode][$index]['name'];
+	$latitude = $regiomino_geodb_avlbregions[$zipcode][$index]['lat'];
+	$longitude = $regiomino_geodb_avlbregions[$zipcode][$index]['lon'];
+	$_SESSION['geolocation_data'] = array(
+		'zipcode' => $zipcode,
+		'locality' => $locality,
+		'latitude' => $latitude,
+		'longitude' => $longitude,
+		'type' => $type,
+		'deliveryoption' => $deliveryoption,
+	);
+}
+
+function regiomino_geolocation_avlbmatch($loc, $vartype) {
+	if($vartype == 'regiomino_geodb_avlbpoints') {
+		$regions = variable_get($vartype);
+		$loc = $regions[$loc];
+	}
+	else if($vartype == 'regiomino_geodb_avlbregions') {
+		$regions_tmp = variable_get($vartype);
+		$regions = array_keys($regions_tmp);
+	}
+	$error = TRUE;
+	foreach($regions as $value) {
+		if($value == $loc) $error = FALSE;
+		$tmp = explode('-', $value);
+		if($tmp[0] == $loc) $error = FALSE;
+	}
+	return $error;
+}
+
+/* function regiomino_geolocation_zip_code_entry_validate($form, &$form_state) {
+	$country_code="DE";
+	$zip_postal=$form_state['values']['zipcode'];
+	$ZIPREG=array(
+		"US"=>"^\d{5}([\-]?\d{4})?$",
+		"UK"=>"^(GIR|[A-Z]\d[A-Z\d]??|[A-Z]{2}\d[A-Z\d]??)[ ]??(\d[A-Z]{2})$",
+		"DE"=>"\b((?:0[1-46-9]\d{3})|(?:[1-357-9]\d{4})|(?:[4][0-24-9]\d{3})|(?:[6][013-9]\d{3}))\b",
+		"CA"=>"^([ABCEGHJKLMNPRSTVXY]\d[ABCEGHJKLMNPRSTVWXYZ])\ {0,1}(\d[ABCEGHJKLMNPRSTVWXYZ]\d)$",
+		"FR"=>"^(F-)?((2[A|B])|[0-9]{2})[0-9]{3}$",
+		"IT"=>"^(V-|I-)?[0-9]{5}$",
+		"AU"=>"^(0[289][0-9]{2})|([1345689][0-9]{3})|(2[0-8][0-9]{2})|(290[0-9])|(291[0-4])|(7[0-4][0-9]{2})|(7[8-9][0-9]{2})$",
+		"NL"=>"^[1-9][0-9]{3}\s?([a-zA-Z]{2})?$",
+		"ES"=>"^([1-9]{2}|[0-9][1-9]|[1-9][0-9])[0-9]{3}$",
+		"DK"=>"^([D-d][K-k])?( |-)?[1-9]{1}[0-9]{3}$",
+		"SE"=>"^(s-|S-){0,1}[0-9]{3}\s?[0-9]{2}$",
+		"BE"=>"^[1-9]{1}[0-9]{3}$"
+	);
+	if ($ZIPREG[$country_code]) {
+		if (!preg_match("/".$ZIPREG[$country_code]."/i",$zip_postal)){
+			//Validation failed, provided zip/postal code is not valid.
+			form_set_error('zipcode', '');
+		} else {
+			//Validation passed, provided zip/postal code is valid.
+		}
+	} else {
+		//Validation not available
+	}
+} */
+
+/**
+* Ajax callback for regiomino_geolocation_zip_code_entry.
+*/
+/* function regiomino_geolocation_zip_code_entry_callback($form, &$form_state) {
+   // if ($form_state['values']['lat'] == '' || $form_state['values']['lon'] == '' || $form_state['values']['loc'] == '' || $form_state['values']['zip'] == '') {
+		// $output = t('Your zipcode is invalid');
+		// $commands[] = ajax_command_alert($output);
+		// return array(
+			// '#type' => 'ajax',
+			// '#commands' => $commands,
+		// );
+  // }
+	user_cookie_save(array(
+		'locationentered' => 1,
+	));
+	$commands[] = ajax_command_invoke(NULL, "geolocationDetected", array($form_state['values']['zip'], $form_state['values']['lat'], $form_state['values']['lon'], $form_state['values']['loc']));
+	return array(
+		'#type' => 'ajax',
+		'#commands' => $commands,
+	);
+} */
+
+/* function regiomino_geolocation_detect_callback($form, &$form_state) {
+	$commands[] = ajax_command_invoke(NULL, "detectGeolocation", array(''));
+	return array(
+		'#type' => 'ajax',
+		'#commands' => $commands,
+	);
+} */
+
+function regiomino_geolocation_get_user_latlon() {
+	$user_latlon['lat'] = 0;
+	$user_latlon['lon'] = 0;
+	if(isset($SESSION['geolocation_data']['latitude'])) $user_latlon['lat'] = $SESSION['geolocation_data']['latitude'];
+	if(isset($SESSION['geolocation_data']['longitude'])) $user_latlon['lon'] = $SESSION['geolocation_data']['longitude'];
+	return $user_latlon;
+}
+
+/* function regiomino_geolocation_views_pre_view(&$view, &$display_id, &$args) {
+  if ($view->name == 'sellerdistance') {
+		$user_latlon = regiomino_geolocation_get_user_latlon();
+		$view_field_geofield = $view->display_handler->get_option('fields');
+		$view_field_geofield['field_geofield_distance']['source_lat'] = $user_latlon['lat'];
+		$view_field_geofield['field_geofield_distance']['source_lon'] = $user_latlon['lon'];
+		$view->display_handler->set_option('fields', $view_field_geofield);
+  }
+	if ($view->name == 'offer') {
+		$user_latlon = regiomino_geolocation_get_user_latlon();
+		$view_field_geofield = $view->display_handler->get_option('fields');
+		$view_field_geofield['field_geofield_distance']['source_lat'] = $user_latlon['lat'];
+		$view_field_geofield['field_geofield_distance']['source_lon'] = $user_latlon['lon'];
+		$view->display_handler->set_option('fields', $view_field_geofield);
+		$view_sort = $view->display_handler->get_option('sorts');
+		$view_sort['field_geofield_distance']['source_lat'] = $user_latlon['lat'];
+		$view_sort['field_geofield_distance']['source_lon'] = $user_latlon['lon'];
+		$view->display_handler->set_option('sorts', $view_sort);
+  }
+} */

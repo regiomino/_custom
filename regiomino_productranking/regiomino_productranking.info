@@ -1,0 +1,5 @@
+name = Regiomino Product Ranking
+description = Methods for ranking products based on regional factors
+core = 7.x
+package = Regiomino
+files[] = regiomino_productranking.module

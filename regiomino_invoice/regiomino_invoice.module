@@ -1,0 +1,2882 @@
+﻿<?php
+/**
+ * @file
+ * Provide examples of using the TCPDF module.
+ */
+
+
+/**
+* Implementation of hook_cron().
+*/
+function regiomino_invoice_cron() {
+	regiomino_invoice_txn();
+
+	
+	
+	
+	$view = views_get_view("delivered_orders_with_soldout_offers");	
+	$view->execute();
+	$result = $view->result;
+	$counter = 0;
+	$noarray = array();
+	$temparray = array();
+	foreach($result as $key=>$value) {
+		$temparray[$value->node_regiomino_order_nid] = 'node';
+	}
+	foreach($temparray as $key=>$value) {
+		$nodeobject = node_load($key);
+		$noarray[] = $nodeobject;
+	}
+	//Generate commission invoices for the expired nodes
+	regiomino_invoice_sale($noarray);
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	$query = new EntityFieldQuery();
+	$query->entityCondition('entity_type', 'regiomino_order')
+				->propertyCondition('created', 1401185862, '>');
+	$result = $query->execute();
+	if (is_array($result['regiomino_order'])) {
+		$allorders = entity_load('regiomino_order', array_keys($result['regiomino_order']));
+		$allnids = array();
+		foreach($allorders as $orderid=>$orderobject) {
+			$allnids[$orderobject->nid] = TRUE;
+		}
+		//Get all the offer nodes that DO have values in field_included_in_invoice and are part of allnids
+		$query = new EntityFieldQuery();
+		$query->entityCondition('entity_type', 'node')
+					->entityCondition('bundle', array('offer'))
+					->propertyCondition('nid', array_keys($allnids))
+					->fieldCondition('field_duration', 'value', date("Y-m-d\TH:i:s", strtotime('today')), '<')
+					->fieldCondition('field_included_in_invoice', 'target_id', 'NULL', '!=');
+		$result = $query->execute();
+
+		if (!is_array($result['node'])) {
+			$result['node'] = array(0 => 0);
+		}
+		
+		//Now get all the other entities, that aren't in the list you just retrieved
+		$query = new EntityFieldQuery();
+		$query->entityCondition('entity_type', 'node')
+					->entityCondition('bundle', array('offer'))
+					->propertyCondition('nid', array_keys($allnids))
+					->fieldCondition('field_duration', 'value', date("Y-m-d\TH:i:s", strtotime('today')), '<')
+					->propertyCondition('nid', array_keys($result['node']), 'NOT IN');
+		$result_two = $query->execute();
+		$allnodes = entity_load('node', array_keys($result_two['node']));
+		regiomino_invoice_comm($allnodes);
+		
+	}
+	
+	
+	regiomino_invoice_shp();
+	
+	
+	//wegen 0 euro lieferung nicht mehr relevant
+	//regiomino_invoice_sale_shp();
+	
+	$time_from = mktime(0,0,0,date('n')-1,1,date('Y'));
+	$time_to = mktime(23,59,59,date('n'),0,date('Y'));
+	$buffer = 864000;
+	
+ 	regiomino_invoice_summary_seller($time_from, $time_to, $buffer);
+	regiomino_invoice_summary_shipper($time_from, $time_to, $buffer);
+	regiomino_invoice_summary_regiomino($time_from, $time_to, $buffer);
+}
+
+function regiomino_invoice_summary_shipper($time_from, $time_to, $buffer) {
+
+	//Get all ids of seller_profiles
+	$query = new EntityFieldQuery;
+	$shipper_profile_ids = $query
+		->entityCondition('entity_type', 'node')
+		->propertyCondition('type', 'shipper_profile')
+		->propertyCondition('status', 1)
+		->execute();
+
+	foreach($shipper_profile_ids['node'] as $profilekey=>$profilevalue) {
+		
+		$shipper_profile = entity_load('node', array($profilekey));
+		$shipper_profile = $shipper_profile[$profilekey];
+
+		//Check if invoice already exists
+		$query = new EntityFieldQuery;
+		$invoicesummary = $query
+			->entityCondition('entity_type', 'node')
+			->propertyCondition('type', 'invoice_summary_shipper')
+			->propertyCondition('uid', $shipper_profile->uid)
+			->fieldCondition('field_month', 'value', $time_from, '=')
+			->execute();
+			
+		$buffer_time = $time_to + $buffer; //10 day buffer
+		$now = time();
+			
+		//If invoice summary doesn't exist, generate it
+		if(!isset($invoicesummary['node']) && $now > $buffer_time) {
+			
+			$invoiced_items = array();
+			
+			// Never make an instance of TCPDF or TCPDFDrupal classes manually.
+			// Use tcpdf_get_instance() instead.
+			$tcpdf_params = array(
+				'unicode' => TRUE,
+				'encoding' => 'UTF-8',
+			);
+			// TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+			$tcpdf_class = array(
+				'class' => 'TCPDFRegiomino',
+				'filetype' => 'inc',
+				'filename' => 'regiomino_invoice.class',
+				'module' => 'regiomino_invoice',
+			);
+			// regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+			$tcpdf_config = array(
+				'filetype' => 'inc',
+				'filename' => 'regiomino_invoice.config',
+				'module' => 'regiomino_invoice', 
+			);
+			
+			$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+
+			/* DrupalInitialize() is an extra method added to TCPDFDrupal that initializes
+			*  some TCPDF variables (like font types), and makes possible to change the
+			*  default header or footer without creating a new class.
+			*/
+			$tcpdf->DrupalInitialize(array(
+				'author' => 'Regiomino GmbH',
+				'title' => 'Rechnungsübersicht für ' . $shipper_profile->field_company_name[LANGUAGE_NONE][0]['value'] . ' ' . date('Y-M', $time_from),
+				'subject' => 'Übersicht über Ihre Rechnungen',
+				'keywords' => 'Regiomino, Rechnung, Bestellungen, Einkauf, Lebensmittel',
+				'footer' => array(
+					'html' => '&nbsp;',
+				),
+				'header' => array(
+					'html' => '&nbsp;',
+				),
+			));
+				
+			//Rechnungen für Versand an Kunden auslesen 	
+			$query = new EntityFieldQuery;
+			$invoices_shipping = $query
+				->entityCondition('entity_type', 'node')
+				->propertyCondition('type', 'invoice_shipping')
+				->propertyCondition('created', $time_from, '>=')
+				->propertyCondition('created', $time_to, '<')
+				->fieldCondition('field_invoicing_entity', 'target_id', $shipper_profile->nid, '=')
+				->execute();
+				
+			if(isset($invoices_shipping['node'])) {
+				$invoices_shipping_nids = array_keys($invoices_shipping['node']);
+				$invoices_shipping_items = entity_load('node', $invoices_shipping_nids);
+				//Add invoice items to array
+				if(isset($invoices_shipping_items)) {
+					foreach($invoices_shipping_items as $shipping_items) {
+						$selleruser = user_load($shipping_items->uid);
+						$sellerprofile = node_load($selleruser->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+						
+						$invoiced_items[$shipping_items->nid]['19.00']['customername'] = $sellerprofile->field_company_name[LANGUAGE_NONE][0]['value'];
+						$invoiced_items[$shipping_items->nid]['19.00']['type'] = 'Lieferung';
+						$invoiced_items[$shipping_items->nid]['19.00']['productcount'] = 1;
+						$pieces = explode(' ', $shipping_items->title);
+						$invoiced_items[$shipping_items->nid]['19.00']['order_process'] = array_pop($pieces);;
+						$invoiced_items[$shipping_items->nid]['19.00']['invoicecreated'] = date('d.m.Y', $shipping_items->created);
+						if($shipping_items->field_cancellation[LANGUAGE_NONE][0]['value'] == 1) {
+							$price = $shipping_items->field_total[LANGUAGE_NONE][0]['value'] * -1;
+							$invoiced_items[$shipping_items->nid]['19.00']['type'] = 'Lieferung (Storno)';
+						}
+						else {
+							$price = $shipping_items->field_total[LANGUAGE_NONE][0]['value'];
+						}
+						$invoiced_items[$shipping_items->nid]['19.00']['total'] = $price;
+					}
+				}
+			}
+			
+			if(isset($invoiced_items) && !empty($invoiced_items)) {
+			
+				ksort($invoiced_items);
+
+				$new_node = new stdClass();
+				$new_node->type = 'invoice_summary_shipper';
+				$new_node->is_new = TRUE;
+				$new_node->title = t('Invoice summary @date', array('@date' => date('Y-m', $time_from)));
+				node_object_prepare($new_node);
+				$new_node->language = 'de';
+				$new_node->uid = $shipper_profile->uid;
+				foreach($invoiced_items as $invoiced_items_key => $invoiced_items_value) {
+					$new_node->field_included_in_invoice[LANGUAGE_NONE][]['target_id'] = $invoiced_items_key;
+				}
+				$new_node->field_invoicing_entity[LANGUAGE_NONE][0]['target_id'] = $shipper_profile->nid;
+				$new_node->field_month[LANGUAGE_NONE][0]['value'] = $time_from;
+				$new_node = node_submit($new_node);
+				node_save($new_node);
+				$newnid = $new_node->nid;
+				$nicedate = date('d.m.Y', $new_node->created);
+				
+				$html = '				 <br />
+				 <br />
+				 <br />
+				 <br />
+				 <br />
+				 <br />
+				 <br />
+				<p style="color: rgb(189, 23, 35); font-size: x-small;">Regiomino GmbH - Habichtweg 6 - 91096 Möhrendorf</p>
+				<p>' . $shipper_profile->field_company_name[LANGUAGE_NONE][0]['value'] . '<br />' . $shipper_profile->field_address['und'][0]['thoroughfare'] . '<br />' . $shipper_profile->field_address['und'][0]['premise'] . '<br />' . $shipper_profile->field_address['und'][0]['postal_code'] . ' ' . $shipper_profile->field_address['und'][0]['locality'] . '</p>
+				<table border="0">
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>Belegnummer</strong></td><td width="60">' . $newnid . '</td>
+					</tr>
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>Belegdatum</strong></td><td width="60">' . $nicedate . '</td>
+					</tr>
+				';
+
+				$kleinunternehmer = $shipper_profile->field_kleinunternehmer[LANGUAGE_NONE][0]['value'];
+				$taxnumber = $shipper_profile->field_taxnumber[LANGUAGE_NONE][0]['value'];
+				if($kleinunternehmer != 1 && !empty($taxnumber)) {
+				$html .= '	
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>UStID / StNr.</strong></td><td width="60">' . $taxnumber . '</td>
+					</tr>';
+				}
+
+				$html .= '
+				</table>
+				<br />
+				<p style="font-size: large;"><strong>Rechnungsübersicht für  ' . $shipper_profile->field_company_name[LANGUAGE_NONE][0]['value'] . '</strong><br />Zeitraum: ' . date('d.m.Y', $time_from) . ' - ' . date('d.m.Y', $time_to) . '</p>
+				<br />
+				<br />
+				<style>
+							tr.rechnungsposheader th {
+								border-bottom: 0.5px solid #000000;
+								font-weight: bold;
+							}
+							tr.taxes th {
+								border-top: 0.5px solid #92BF20;
+								font-weight: bold;
+							}
+							tr.lastrow td {
+								border-bottom: 0.5px solid #000000;
+							}
+							tr.summary td {
+								font-weight: bold;
+							}
+							table.taxcalc {
+								font-size: small;
+							}
+						</style>
+						<table cellpadding="4">
+							<tr class="rechnungsposheader">
+								<th>Vertragspartner</th><th>Typ</th><th>Datum</th><th>MwSt.</th><th>Netto</th><th>Brutto</th>
+							</tr>';
+							
+				$counter = 1;
+				$addup = 0;
+				$addupvat = 0;
+				$mwstaddup = 0;
+				$mwstarray = array();
+			
+				foreach($invoiced_items as $rechnungsnummer => $invoiced_items_value) {
+					foreach($invoiced_items_value as $mwstsatz => $positionsinfo) {
+
+						if($counter == count($invoiced_items)) {
+							$html .= '<tr class="lastrow">';
+						}
+						else {
+							$html .= '<tr class="lastrow">';	
+						}
+						$html .= '<td>' . $positionsinfo['customername'] . '</td><td>' . $positionsinfo['type'] . '</td><td>' . $positionsinfo['invoicecreated'] . '<br /><font style="font-size: small;">Rechnung ' . $rechnungsnummer . ' (Bestellnr. ' . $positionsinfo['order_process'] . ')</font></td><td>' . number_format($mwstsatz, "2", ",", ".") . ' %</td>';
+						
+						$rowtotal = round($positionsinfo['total'], 2);
+						$addup += $rowtotal;
+						$rowmwst = round($rowtotal * $mwstsatz / (100 + $mwstsatz), 2);
+						$mwstarray[$mwstsatz]['mwst'] += $rowmwst;
+						$mwstarray[$mwstsatz]['brutto'] += $rowtotal;
+						$mwstarray[$mwstsatz]['netto'] += $rowtotal - $rowmwst;
+						$addupvat += $rowmwst;
+
+						$html .= '
+							<td>' . number_format($rowtotal - $rowmwst, '2', ',', '.') . ' €</td>
+							<td>' . number_format($rowtotal, '2', ',', '.') . ' €</td>
+						</tr>';
+						$counter++;
+					}
+				}
+
+				$addupnetto = $addup - $addupvat;
+					
+				$html .= '<tr class="summary">
+						<td colspan="4">&nbsp;</td>
+						<td>Gesamtbetrag</td>
+						<td>' . number_format($addup, '2', ',', '.') . ' €</td>
+						<td>&nbsp;</td>
+					</tr>
+				 </table>
+				 <br />
+				 <br />
+				 <br />
+				 <table class="taxcalc" cellpadding="4">
+					<tr class="taxes">
+						<th>Rechnung brutto</th>
+						<th>Rechnung netto</th>
+						<th>MwSt.</th>
+						<th>Brutto</th>
+						<th>Netto</th>
+						<th>MwSt.</th>
+					</tr>';
+					$mwstfirst = TRUE;
+					foreach($mwstarray as $mwstkey => $mwstvalue) {
+						$html .= '<tr>';
+						
+						if($mwstfirst) {
+							$html .= '<td>' . number_format($addup, '2', ',', '.') . ' €</td>
+							<td>' . number_format($addupnetto, '2', ',', '.') . ' €</td>';
+							$mwstfirst = FALSE;
+						}
+						else {
+							$html .= '<td colspan="2">&nbsp;</td>';
+						}
+							
+						$html .= '
+							<td>' . number_format($mwstkey, '2', ',', '.') . ' %</td>
+							<td>' . number_format($mwstvalue['brutto'], '2', ',', '.') . ' €</td>
+							<td>' . number_format($mwstvalue['netto'], '2', ',', '.') . ' €</td>
+							<td>' . number_format($mwstvalue['mwst'], '2', ',', '.') . ' €</td>
+						</tr>';
+					}
+					$html .= '
+				 </table>
+				 
+				 <br />
+				 <br />
+				 <br />
+				 
+				 <p style="font-size: large;"><strong>Haben Sie Fragen?</strong></p>
+				 <p>Bitte kontaktieren Sie uns per Mail unter support@regiomino.de</p>				 
+				 ';
+
+				$new_node->field_total['und'][0]['value'] = $addup;
+
+				$tcpdf->writeHTML($html);
+				$tcpdf->Output("private://rsum_shipper_tmp.pdf", "F");
+				$filepath = "private://rsum_shipper_tmp.pdf";
+				// Create managed File object and associate with Image field.
+				$file = (object) array(
+					'uid' => 1,
+					'uri' => $filepath,
+					'filemime' => file_get_mimetype($filepath),
+					'status' => 1,
+					'display' => 1,
+				);
+				// We save the file to the root of the files directory.
+				$file = file_copy($file, "private://rsum_shipper_$newnid.pdf");
+				$new_node->field_invoice_file[LANGUAGE_NONE][0] = (array)$file;
+				node_save($new_node);
+			}
+		}
+	}
+}
+
+function regiomino_invoice_summary_regiomino($time_from, $time_to, $buffer) {
+
+	//Check if invoice already exists
+	$query = new EntityFieldQuery;
+	$invoicesummary = $query
+		->entityCondition('entity_type', 'node')
+		->propertyCondition('type', 'invoice_summary_regiomino')
+		->fieldCondition('field_month', 'value', $time_from, '=')
+		->execute();
+			
+		$buffer_time = $time_to + $buffer; //10 day buffer
+		$now = time();
+			
+		//If invoice summary doesn't exist, generate it
+		if(!isset($invoicesummary['node']) && $now > $buffer_time) {
+			
+		$invoiced_items = array();
+			
+		// Never make an instance of TCPDF or TCPDFDrupal classes manually.
+		// Use tcpdf_get_instance() instead.
+		$tcpdf_params = array(
+			'unicode' => TRUE,
+			'encoding' => 'UTF-8',
+		);
+		// TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+		$tcpdf_class = array(
+			'class' => 'TCPDFRegiomino',
+			'filetype' => 'inc',
+			'filename' => 'regiomino_invoice.class',
+			'module' => 'regiomino_invoice',
+		);
+		// regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+		$tcpdf_config = array(
+			'filetype' => 'inc',
+			'filename' => 'regiomino_invoice.config',
+			'module' => 'regiomino_invoice', 
+		);
+		
+		$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+
+		/* DrupalInitialize() is an extra method added to TCPDFDrupal that initializes
+		*  some TCPDF variables (like font types), and makes possible to change the
+		*  default header or footer without creating a new class.
+		*/
+		$tcpdf->DrupalInitialize(array(
+			'author' => 'Regiomino GmbH',
+			'title' => 'Rechnungsübersicht für ' . $seller_profile->field_company_name[LANGUAGE_NONE][0]['value'] . ' ' . date('Y-M', $time_from),
+			'subject' => 'Übersicht über Ihre Rechnungen',
+			'keywords' => 'Regiomino, Rechnung, Bestellungen, Einkauf, Lebensmittel',
+			'footer' => array(
+				'html' => '&nbsp;',
+			),
+			'header' => array(
+				'html' => '&nbsp;',
+			),
+		));
+
+		//Rechnungen für Kommission auslesen
+		$query = new EntityFieldQuery;
+		$invoices_commission = $query
+			->entityCondition('entity_type', 'node')
+			->propertyCondition('type', 'invoice_commission')
+			->propertyCondition('created', $time_from, '>=')
+			->propertyCondition('created', $time_to, '<')
+			->execute();
+		if(isset($invoices_commission['node'])) {
+			$invoices_commission_nids = array_keys($invoices_commission['node']);
+			$invoices_commission_items = entity_load('node', $invoices_commission_nids);
+			//Add invoice items to array
+			if(isset($invoices_commission_items)) {
+				foreach($invoices_commission_items as $commission_items) {
+					$kommissionierteruser = user_load($commission_items->uid);
+					$verkaeuferprofil = node_load($kommissionierteruser->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+					$invoiced_items[$commission_items->nid]['19.00']['customername'] = $verkaeuferprofil->field_company_name[LANGUAGE_NONE][0]['value'];
+					$invoiced_items[$commission_items->nid]['19.00']['type'] = 'Gebühr';
+					$invoiced_items[$commission_items->nid]['19.00']['productcount'] = 1;
+					$invoiced_items[$commission_items->nid]['19.00']['invoicecreated'] = date('d.m.Y', $commission_items->created);
+					if($shipping_items->field_cancellation[LANGUAGE_NONE][0]['value'] == 1) {
+						$price = $commission_items->field_total[LANGUAGE_NONE][0]['value'] * -1;
+						$invoiced_items[$commission_items->nid]['19.00']['type'] = 'Gebühr (Storno)';
+					}
+					else {
+						$price = $commission_items->field_total[LANGUAGE_NONE][0]['value'];
+					}
+					$invoiced_items[$commission_items->nid]['19.00']['total'] = $price;
+				}
+			}
+		}
+		
+		//Rechnungen für Transaktionsgebühren auslesen
+		$query = new EntityFieldQuery;
+		$invoices_txn = $query
+			->entityCondition('entity_type', 'node')
+			->propertyCondition('type', 'invoice_txnfee')
+			->propertyCondition('created', $time_from, '>=')
+			->propertyCondition('created', $time_to, '<')
+			->execute();
+		if(isset($invoices_txn['node'])) {
+			$invoices_txn_nids = array_keys($invoices_txn['node']);
+			$invoices_txn_items = entity_load('node', $invoices_txn_nids);
+			//Add invoice items to array
+			if(isset($invoices_txn_items)) {
+				foreach($invoices_txn_items as $txn_items) {
+					$namequery = db_query('SELECT o.billing_first_name, o.billing_last_name FROM {regiomino_order} o WHERE o.order_process_id = :order_process_id GROUP BY o.order_process_id', array(':order_process_id' => $txn_items->field_order_process[LANGUAGE_NONE][0]['target_id']));
+					$result = $namequery->fetchAssoc();
+					$invoiced_items[$txn_items->nid]['19.00']['customername'] = $result['billing_first_name'] . ' ' . $result['billing_last_name'];
+					$invoiced_items[$txn_items->nid]['19.00']['type'] = 'Gebühr Transaktion';
+					$invoiced_items[$txn_items->nid]['19.00']['productcount'] = 1;
+					$invoiced_items[$txn_items->nid]['19.00']['invoicecreated'] = date('d.m.Y', $txn_items->created);
+					if($shipping_items->field_cancellation[LANGUAGE_NONE][0]['value'] == 1) {
+						$price = $txn_items->field_total[LANGUAGE_NONE][0]['value'] * -1;
+						$invoiced_items[$txn_items->nid]['19.00']['type'] = 'Gebühr Transaktion (Storno)';
+					}
+					else {
+						$price = $txn_items->field_total[LANGUAGE_NONE][0]['value'];
+					}
+					$invoiced_items[$txn_items->nid]['19.00']['total'] = $price;
+				}
+			}
+		}
+			
+		if(isset($invoiced_items) && !empty($invoiced_items)) {
+		
+			ksort($invoiced_items);
+
+			$new_node = new stdClass();
+			$new_node->type = 'invoice_summary_regiomino';
+			$new_node->is_new = TRUE;
+			$new_node->title = t('Invoice summary @date', array('@date' => date('Y-m', $time_from)));
+			node_object_prepare($new_node);
+			$new_node->language = 'de';
+			$new_node->uid = 1;
+			foreach($invoiced_items as $invoiced_items_key => $invoiced_items_value) {
+				$new_node->field_included_in_invoice[LANGUAGE_NONE][]['target_id'] = $invoiced_items_key;
+			}
+			$new_node->field_month[LANGUAGE_NONE][0]['value'] = $time_from;
+			$new_node = node_submit($new_node);
+			node_save($new_node);
+			$newnid = $new_node->nid;
+			$nicedate = date('d.m.Y', $new_node->created);
+			
+			$html = '				 <br />
+			 <br />
+			 <br />
+			 <br />
+			 <br />
+			 <br />
+			 <br />
+			<p style="color: rgb(189, 23, 35); font-size: x-small;">Regiomino GmbH - Habichtweg 6 - 91096 Möhrendorf</p>
+			<p>Regiomino GmbH<br />Habichtweg 6<br /><br />91096 Möhrendorf</p>
+			<table border="0">
+				<tr>
+					<td width="320">&nbsp;</td><td width="100"><strong>Belegnummer</strong></td><td width="60">' . $newnid . '</td>
+				</tr>
+				<tr>
+					<td width="320">&nbsp;</td><td width="100"><strong>Belegdatum</strong></td><td width="60">' . $nicedate . '</td>
+				</tr>
+			';
+
+			$html .= '	
+				<tr>
+					<td width="320">&nbsp;</td><td width="100"><strong>UStID</strong></td><td width="60">DE289663879</td>
+				</tr>';
+
+
+			$html .= '
+			</table>
+			<br />
+			<p style="font-size: large;"><strong>Rechnungsübersicht für Regiomino GmbH</strong><br />Zeitraum: ' . date('d.m.Y', $time_from) . ' - ' . date('d.m.Y', $time_to) . '</p>
+			<br />
+			<br />
+			<style>
+						tr.rechnungsposheader th {
+							border-bottom: 0.5px solid #000000;
+							font-weight: bold;
+						}
+						tr.taxes th {
+							border-top: 0.5px solid #92BF20;
+							font-weight: bold;
+						}
+						tr.lastrow td {
+							border-bottom: 0.5px solid #000000;
+						}
+						tr.summary td {
+							font-weight: bold;
+						}
+						table.taxcalc {
+							font-size: small;
+						}
+					</style>
+					<table cellpadding="4">
+						<tr class="rechnungsposheader">
+							<th>Vertragspartner</th><th>Typ</th><th>Datum</th><th>MwSt.</th><th>Netto</th><th>Brutto</th>
+						</tr>';
+						
+			$counter = 1;
+			$addup = 0;
+			$addupvat = 0;
+			$mwstaddup = 0;
+			$mwstarray = array();
+		
+			foreach($invoiced_items as $rechnungsnummer => $invoiced_items_value) {
+				foreach($invoiced_items_value as $mwstsatz => $positionsinfo) {
+
+					if($counter == count($invoiced_items)) {
+						$html .= '<tr class="lastrow">';
+					}
+					else {
+						$html .= '<tr class="lastrow">';	
+					}
+					$html .= '<td>' . $positionsinfo['customername'] . '</td><td>' . $positionsinfo['type'] . '</td><td>' . $positionsinfo['invoicecreated'] . '<br /><font style="font-size: small;">Rechnung ' . $rechnungsnummer . '</font></td><td>' . number_format($mwstsatz, "2", ",", ".") . ' %</td>';
+					
+					$rowtotal = round($positionsinfo['total'], 2);
+					$addup += $rowtotal;
+					$rowmwst = round($rowtotal * $mwstsatz / (100 + $mwstsatz), 2);
+					$mwstarray[$mwstsatz]['mwst'] += $rowmwst;
+					$mwstarray[$mwstsatz]['brutto'] += $rowtotal;
+					$mwstarray[$mwstsatz]['netto'] += $rowtotal - $rowmwst;
+					$addupvat += $rowmwst;
+
+					$html .= '
+						<td>' . number_format($rowtotal - $rowmwst, '2', ',', '.') . ' €</td>
+						<td>' . number_format($rowtotal, '2', ',', '.') . ' €</td>
+					</tr>';
+					$counter++;
+				}
+			}
+
+			$addupnetto = $addup - $addupvat;
+				
+			$html .= '<tr class="summary">
+					<td colspan="4">&nbsp;</td>
+					<td>Gesamtbetrag</td>
+					<td>' . number_format($addup, '2', ',', '.') . ' €</td>
+					<td>&nbsp;</td>
+				</tr>
+			 </table>
+			 <br />
+			 <br />
+			 <br />
+			 <table class="taxcalc" cellpadding="4">
+				<tr class="taxes">
+					<th>Rechnung brutto</th>
+					<th>Rechnung netto</th>
+					<th>MwSt.</th>
+					<th>Brutto</th>
+					<th>Netto</th>
+					<th>MwSt.</th>
+				</tr>';
+				$mwstfirst = TRUE;
+				foreach($mwstarray as $mwstkey => $mwstvalue) {
+					$html .= '<tr>';
+					
+					if($mwstfirst) {
+						$html .= '<td>' . number_format($addup, '2', ',', '.') . ' €</td>
+						<td>' . number_format($addupnetto, '2', ',', '.') . ' €</td>';
+						$mwstfirst = FALSE;
+					}
+					else {
+						$html .= '<td colspan="2">&nbsp;</td>';
+					}
+						
+					$html .= '
+						<td>' . number_format($mwstkey, '2', ',', '.') . ' %</td>
+						<td>' . number_format($mwstvalue['brutto'], '2', ',', '.') . ' €</td>
+						<td>' . number_format($mwstvalue['netto'], '2', ',', '.') . ' €</td>
+						<td>' . number_format($mwstvalue['mwst'], '2', ',', '.') . ' €</td>
+					</tr>';
+				}
+				$html .= '
+			 </table>
+			 
+			 <br />
+			 <br />
+			 <br />
+			 
+			 <p style="font-size: large;"><strong>Haben Sie Fragen?</strong></p>
+			 <p>Bitte kontaktieren Sie uns per Mail unter support@regiomino.de</p>				 
+			 ';
+
+			$new_node->field_total['und'][0]['value'] = $addup;
+
+			$tcpdf->writeHTML($html);
+			$tcpdf->Output("private://rsum_regiomino_tmp.pdf", "F");
+			$filepath = "private://rsum_regiomino_tmp.pdf";
+			$file = (object) array(
+				'uid' => 1,
+				'uri' => $filepath,
+				'filemime' => file_get_mimetype($filepath),
+				'status' => 1,
+				'display' => 1,
+			);
+			// We save the file to the root of the files directory.
+			$file = file_copy($file, "private://rsum_regiomino_$newnid.pdf");
+			$new_node->field_invoice_file[LANGUAGE_NONE][0] = (array)$file;
+			node_save($new_node);
+		}
+	}
+}
+
+function regiomino_invoice_summary_seller($time_from, $time_to, $buffer) {
+
+	//Get all ids of seller_profiles
+	$query = new EntityFieldQuery;
+	$seller_profile_ids = $query
+		->entityCondition('entity_type', 'node')
+		->propertyCondition('type', 'seller_profile')
+		->propertyCondition('status', 1)
+		->execute();
+
+	foreach($seller_profile_ids['node'] as $profilekey=>$profilevalue) {
+		
+		$seller_profile = entity_load('node', array($profilekey));
+		$seller_profile = $seller_profile[$profilekey];
+
+		//Check if invoice already exists
+		$query = new EntityFieldQuery;
+		$invoicesummary = $query
+			->entityCondition('entity_type', 'node')
+			->propertyCondition('type', 'invoice_summary_seller')
+			->propertyCondition('uid', $seller_profile->uid)
+			->fieldCondition('field_month', 'value', $time_from, '=')
+			->execute();
+			
+		$buffer_time = $time_to + $buffer; //10 day buffer
+		$now = time();
+		
+
+		//If invoice summary doesn't exist, generate it
+		if(!isset($invoicesummary['node']) && $now > $buffer_time) {
+		
+			$invoiced_items = array();
+			
+			// Never make an instance of TCPDF or TCPDFDrupal classes manually.
+			// Use tcpdf_get_instance() instead.
+			$tcpdf_params = array(
+				'unicode' => TRUE,
+				'encoding' => 'UTF-8',
+			);
+			// TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+			$tcpdf_class = array(
+				'class' => 'TCPDFRegiomino',
+				'filetype' => 'inc',
+				'filename' => 'regiomino_invoice.class',
+				'module' => 'regiomino_invoice',
+			);
+			// regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+			$tcpdf_config = array(
+				'filetype' => 'inc',
+				'filename' => 'regiomino_invoice.config',
+				'module' => 'regiomino_invoice', 
+			);
+			
+			$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+
+			/* DrupalInitialize() is an extra method added to TCPDFDrupal that initializes
+			*  some TCPDF variables (like font types), and makes possible to change the
+			*  default header or footer without creating a new class.
+			*/
+			$tcpdf->DrupalInitialize(array(
+				'author' => 'Regiomino GmbH',
+				'title' => 'Rechnungsübersicht für ' . $seller_profile->field_company_name[LANGUAGE_NONE][0]['value'] . ' ' . date('Y-M', $time_from),
+				'subject' => 'Übersicht über Ihre Rechnungen',
+				'keywords' => 'Regiomino, Rechnung, Bestellungen, Einkauf, Lebensmittel',
+				'footer' => array(
+					'html' => '&nbsp;',
+				),
+				'header' => array(
+					'html' => '&nbsp;',
+				),
+			));
+			
+			//Get all invoices for orders that the seller created within the last month
+			$query = new EntityFieldQuery;
+			$invoices_sale = $query
+				->entityCondition('entity_type', 'node')
+				->propertyCondition('type', 'invoice_sale')
+				->propertyCondition('created', $time_from, '>=')
+				->propertyCondition('created', $time_to, '<=')
+				->fieldCondition('field_invoicing_entity', 'target_id', $seller_profile->nid, '=')
+				->execute();
+			if(isset($invoices_sale['node'])) {
+				$invoices_sale_nids = array_keys($invoices_sale['node']);
+				$invoices_sale_items = entity_load('node', $invoices_sale_nids);
+				//Get all order items from the invoices
+				if(isset($invoices_sale_items)) {
+					foreach($invoices_sale_items as $sale_items) {
+						foreach($sale_items->field_order_item[LANGUAGE_NONE] as $key_sale_item => $val_sale_item) {
+							$orderquery = db_query("SELECT o.nid, o.product_count, o.billing_first_name, o.billing_last_name, o.invoice, o.created, o.order_process_id FROM {regiomino_order} o WHERE o.order_id = :order_id", array(':order_id' => $val_sale_item['target_id']));
+							$result = $orderquery->fetchAssoc();
+							$nodeobject = node_load($result['nid']);
+							$vatvalue = $nodeobject->field_salestax[LANGUAGE_NONE][0]['value'];
+							if($sale_items->created < 1384038000) {
+								$discountedprice = regiomino_offer_get_discountedprice($nodeobject, FALSE, TRUE, TRUE);
+							}
+							else {
+								$discountedprice = regiomino_offer_get_discountedprice($nodeobject);
+							}
+							//Add name to array. This will be overwritten multiple time, because it's always the same name.
+							//But it's important to use the name from the order db, since this can not be changed by customer anymore
+							$invoiced_items['sales'][$sale_items->nid][$vatvalue]['customername'] = $result['billing_first_name'] . ' ' . $result['billing_last_name'];
+							//Add sales type to array.
+							$invoiced_items['sales'][$sale_items->nid][$vatvalue]['type'] = 'Warenverkauf #' . $result['order_process_id'];
+							//Add invoice date to array
+							$invoiced_items['sales'][$sale_items->nid][$vatvalue]['invoicecreated'] = date('d.m.Y', $sale_items->created);
+							//Add up product count for each tax value
+							if(isset($invoiced_items['sales'][$sale_items->nid][$vatvalue]['productcount'])) {
+								$invoiced_items['sales'][$sale_items->nid][$vatvalue]['productcount'] += $result['product_count'];
+							}
+							else {
+								$invoiced_items['sales'][$sale_items->nid][$vatvalue]['productcount'] = $result['product_count'];
+							}
+							//Add up order total for each tax value
+							if(isset($invoiced_items['sales'][$sale_items->nid][$vatvalue]['productcount'])) {
+								if($sale_items->field_cancellation[LANGUAGE_NONE][0]['value'] == 1) {
+									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['total'] += $result['product_count'] * $discountedprice * -1;
+									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['type'] = 'Warenverkauf (Storno)';
+								}
+								else {
+									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['total'] += $result['product_count'] * $discountedprice;
+								}
+							}
+							else {
+								if($sale_items->field_cancellation[LANGUAGE_NONE][0]['value'] == 1) {
+									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['total'] = $result['product_count'] * $discountedprice * -1;
+									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['type'] = 'Warenverkauf (Storno)';
+								}
+								else {
+									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['total'] = $result['product_count'] * $discountedprice;
+								}
+							}
+						}
+					}
+				}
+			}
+
+
+			//Rechnungen für Kommission auslesen
+			$query = new EntityFieldQuery;
+			$invoices_commission = $query
+				->entityCondition('entity_type', 'node')
+				->propertyCondition('type', 'invoice_commission')
+				->propertyCondition('uid', $seller_profile->uid)
+				->propertyCondition('created', $time_from, '>=')
+				->propertyCondition('created', $time_to, '<')
+				->execute();
+			if(isset($invoices_commission['node'])) {
+				$invoices_commission_nids = array_keys($invoices_commission['node']);
+				$invoices_commission_items = entity_load('node', $invoices_commission_nids);
+				//Add invoice items to array
+				if(isset($invoices_commission_items)) {
+					foreach($invoices_commission_items as $commission_items) {
+						$invoiced_items['commission'][$commission_items->nid]['19.00']['customername'] = 'Regiomino GmbH';
+						$invoiced_items['commission'][$commission_items->nid]['19.00']['type'] = 'Gebühr';
+						$invoiced_items['commission'][$commission_items->nid]['19.00']['productcount'] = 1;
+						$invoiced_items['commission'][$commission_items->nid]['19.00']['invoicecreated'] = date('d.m.Y', $commission_items->created);
+						if($commission_items->field_cancellation[LANGUAGE_NONE][0]['value'] == 1) {
+							$price = $commission_items->field_total[LANGUAGE_NONE][0]['value'];
+							$invoiced_items['commission'][$commission_items->nid]['19.00']['type'] = 'Gebühr (Storno)';
+						}
+						else {
+							$price = $commission_items->field_total[LANGUAGE_NONE][0]['value'] * -1;
+						}
+						$invoiced_items['commission'][$commission_items->nid]['19.00']['total'] = $price;
+					}
+				}
+			}	
+
+			
+			//Rechnungen für Versand auslesen
+			$query = new EntityFieldQuery;
+			$invoices_shipping = $query
+				->entityCondition('entity_type', 'node')
+				->propertyCondition('type', 'invoice_shipping')
+				->propertyCondition('uid', $seller_profile->uid)
+				->propertyCondition('created', $time_from, '>=')
+				->propertyCondition('created', $time_to, '<')
+				->execute();
+			if(isset($invoices_shipping['node'])) {
+				$invoices_shipping_nids = array_keys($invoices_shipping['node']);
+				$invoices_shipping_items = entity_load('node', $invoices_shipping_nids);
+				//Add invoice items to array
+				if(isset($invoices_shipping_items)) {
+					foreach($invoices_shipping_items as $shipping_items) {
+						$invoicing_entity = node_load($shipping_items->field_invoicing_entity[LANGUAGE_NONE][0]['target_id']);
+						$invoiced_items['shipping'][$shipping_items->nid]['19.00']['customername'] = $invoicing_entity->field_company_name[LANGUAGE_NONE][0]['value'];
+						$invoiced_items['shipping'][$shipping_items->nid]['19.00']['type'] = 'Lieferant';
+						$invoiced_items['shipping'][$shipping_items->nid]['19.00']['productcount'] = 1;
+						$invoiced_items['shipping'][$shipping_items->nid]['19.00']['invoicecreated'] = date('d.m.Y', $shipping_items->created);
+						if($shipping_items->field_cancellation[LANGUAGE_NONE][0]['value'] == 1) {
+							$price = $shipping_items->field_total[LANGUAGE_NONE][0]['value'];
+							$invoiced_items['shipping'][$shipping_items->nid]['19.00']['type'] = 'Lieferant (Storno)';
+						}
+						else {
+							$price = $shipping_items->field_total[LANGUAGE_NONE][0]['value'] * -1;
+						}
+						$invoiced_items['shipping'][$shipping_items->nid]['19.00']['total'] = $price;
+					}
+				}
+			}
+				
+			//Rechnungen für Versand an Kunden auslesen 	
+			$query = new EntityFieldQuery;
+			$invoices_shipping_sale = $query
+				->entityCondition('entity_type', 'node')
+				->propertyCondition('type', 'invoice_shipping_sale')
+				->propertyCondition('created', $time_from, '>=')
+				->propertyCondition('created', $time_to, '<')
+				->fieldCondition('field_invoicing_entity', 'target_id', $seller_profile->nid, '=')
+				->execute();
+			if(isset($invoices_shipping_sale['node'])) {
+				$invoices_shipping_sale_nids = array_keys($invoices_shipping_sale['node']);
+				$invoices_shipping_sale_items = entity_load('node', $invoices_shipping_sale_nids);
+				//Add invoice items to array
+				if(isset($invoices_shipping_items)) {
+					foreach($invoices_shipping_sale_items as $shipping_sale_items) {
+						$namequery = db_query('SELECT o.billing_first_name, o.billing_last_name FROM {regiomino_order_shipping} s, {regiomino_order} o WHERE s.shipping_id = :shipping_id AND s.shipping_id = o.shipping GROUP BY o.shipping', array(':shipping_id' => $shipping_sale_items->field_shipping_id[LANGUAGE_NONE][0]['target_id']));
+						$result = $namequery->fetchAssoc();
+						$invoiced_items['shipping_sales'][$shipping_sale_items->nid]['19.00']['customername'] = $result['billing_first_name'] . ' ' . $result['billing_last_name'];
+						$invoiced_items['shipping_sales'][$shipping_sale_items->nid]['19.00']['type'] = 'Lieferkosten';
+						$invoiced_items['shipping_sales'][$shipping_sale_items->nid]['19.00']['productcount'] = 1;
+						$invoiced_items['shipping_sales'][$shipping_sale_items->nid]['19.00']['invoicecreated'] = date('d.m.Y', $shipping_sale_items->created);
+						if($shipping_sale_items->field_cancellation[LANGUAGE_NONE][0]['value'] == 1) {
+							$price = $shipping_sale_items->field_total[LANGUAGE_NONE][0]['value'] * -1;
+							$invoiced_items['shipping_sales'][$shipping_sale_items->nid]['19.00']['type'] = 'Lieferkosten (Storno)';
+						}
+						else {
+							$price = $shipping_sale_items->field_total[LANGUAGE_NONE][0]['value'];
+						}
+						$invoiced_items[$shipping_sale_items->nid]['19.00']['total'] = $price;
+					}
+				}
+			}
+			
+			if(isset($invoiced_items) && !empty($invoiced_items)) {
+			
+				if(isset($invoiced_items['sales'])) ksort($invoiced_items['sales']);
+				if(isset($invoiced_items['commission'])) ksort($invoiced_items['commission']);
+				if(isset($invoiced_items['shipping'])) ksort($invoiced_items['shipping']);
+				if(isset($invoiced_items['shipping_sales'])) ksort($invoiced_items['shipping_sales']);
+
+				$new_node = new stdClass();
+				$new_node->type = 'invoice_summary_seller';
+				$new_node->is_new = TRUE;
+				$new_node->title = t('Invoice summary @date', array('@date' => date('Y-m', $time_from)));
+				node_object_prepare($new_node);
+				$new_node->language = 'de';
+				$new_node->uid = $seller_profile->uid;
+				foreach($invoiced_items['sales'] as $invoiced_items_key => $invoiced_items_value) {
+					$new_node->field_included_in_invoice[LANGUAGE_NONE][]['target_id'] = $invoiced_items_key;
+				}
+				foreach($invoiced_items['commission'] as $invoiced_items_key => $invoiced_items_value) {
+					$new_node->field_included_in_invoice[LANGUAGE_NONE][]['target_id'] = $invoiced_items_key;
+				}
+				foreach($invoiced_items['shipping'] as $invoiced_items_key => $invoiced_items_value) {
+					$new_node->field_included_in_invoice[LANGUAGE_NONE][]['target_id'] = $invoiced_items_key;
+				}
+				foreach($invoiced_items['shipping_sales'] as $invoiced_items_key => $invoiced_items_value) {
+					$new_node->field_included_in_invoice[LANGUAGE_NONE][]['target_id'] = $invoiced_items_key;
+				}
+				$new_node->field_invoicing_entity[LANGUAGE_NONE][0]['target_id'] = $seller_profile->nid;
+				$new_node->field_month[LANGUAGE_NONE][0]['value'] = $time_from;
+				$new_node = node_submit($new_node);
+				node_save($new_node);
+				$newnid = $new_node->nid;
+				$nicedate = date('d.m.Y', $new_node->created);
+				
+				$html = '				 <br />
+				 <br />
+				 <br />
+				 <br />
+				 <br />
+				 <br />
+				 <br />
+				<p style="color: rgb(189, 23, 35); font-size: x-small;">Regiomino GmbH - Habichtweg 6 - 91096 Möhrendorf</p>
+				<p>' . $seller_profile->field_company_name[LANGUAGE_NONE][0]['value'] . '<br />' . $seller_profile->field_address['und'][0]['thoroughfare'] . '<br />' . $seller_profile->field_address['und'][0]['premise'] . '<br />' . $seller_profile->field_address['und'][0]['postal_code'] . ' ' . $seller_profile->field_address['und'][0]['locality'] . '</p>
+				<table border="0">
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>Belegnummer</strong></td><td width="60">' . $newnid . '</td>
+					</tr>
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>Belegdatum</strong></td><td width="60">' . $nicedate . '</td>
+					</tr>
+				';
+
+				$kleinunternehmer = $seller_profile->field_kleinunternehmer[LANGUAGE_NONE][0]['value'];
+				$taxnumber = $seller_profile->field_taxnumber[LANGUAGE_NONE][0]['value'];
+				if($kleinunternehmer != 1 && !empty($taxnumber)) {
+				$html .= '	
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>UStID / StNr.</strong></td><td width="60">' . $taxnumber . '</td>
+					</tr>';
+				}
+
+				$html .= '
+				</table>
+				<br />
+				<p style="font-size: x-large;"><strong>Rechnungsübersicht für  ' . $seller_profile->field_company_name[LANGUAGE_NONE][0]['value'] . '</strong><br />Zeitraum: ' . date('d.m.Y', $time_from) . ' - ' . date('d.m.Y', $time_to) . '</p>
+				<br />
+				<br />
+				<style>
+							tr.rechnungsposheader th {
+								border-bottom: 0.5px solid #000000;
+								font-weight: bold;
+							}
+							tr.taxes th {
+								border-top: 0.5px solid #92BF20;
+								font-weight: bold;
+							}
+							tr.lastrow td {
+								border-bottom: 0.5px solid #000000;
+							}
+							tr.summary td {
+								font-weight: bold;
+							}
+							table.taxcalc {
+								font-size: small;
+							}
+							table.taxcalcheader td.firstcolumn {
+								width: 75px;
+							}
+							table.taxcalcheader th.firstcolumn {
+								width: 75px;
+							}
+							table.taxcalcheader th.desccolumn {
+								width: 150px;
+							}
+						</style>';
+				
+
+				$addup = 0;
+				$addupvat = 0;
+				$mwstaddup = 0;
+				$mwstarray = array();
+	
+				$htmltemp = '';
+				
+				
+				$internaladdupsales = 0;
+				$internaladdupsalesnetto = 0;
+				$counter = 1;
+				$internalmwstarray = array();
+				$internaladdupsalesvat = 0;
+				if($invoiced_items['sales']) {
+					$htmltemp .= '<p style="font-size: large;"><strong>Ihre Warenverkäufe</strong></p><table cellpadding="4">
+								<tr class="rechnungsposheader">
+									<th>Vertragspartner</th><th>Typ</th><th>Datum</th><th>MwSt.</th><th>Netto</th><th>Brutto</th>
+								</tr>';
+								
+					foreach($invoiced_items['sales'] as $rechnungsnummer => $invoiced_items_value) {
+						foreach($invoiced_items_value as $mwstsatz => $positionsinfo) {
+
+							if($counter == count($invoiced_items)) {
+								$htmltemp .= '<tr class="lastrow">';
+							}
+							else {
+								$htmltemp .= '<tr class="lastrow">';	
+							}
+							$htmltemp .= '<td>' . $positionsinfo['customername'] . '</td><td>' . $positionsinfo['type'] . '</td><td>' . $positionsinfo['invoicecreated'] . '<br /><font style="font-size: small;">Rechnung ' . $rechnungsnummer . '</font></td><td>' . number_format($mwstsatz, "2", ",", ".") . ' %</td>';
+							
+							$rowtotal = round($positionsinfo['total'], 2);
+							$addup += $rowtotal;
+							$internaladdupsales += $rowtotal;
+							$rowmwst = round($rowtotal * $mwstsatz / (100 + $mwstsatz), 2);
+							$mwstarray[$mwstsatz]['mwst'] += $rowmwst;
+							$mwstarray[$mwstsatz]['brutto'] += $rowtotal;
+							$mwstarray[$mwstsatz]['netto'] += $rowtotal - $rowmwst;
+							$internalmwstarray[$mwstsatz]['mwst'] += $rowmwst;
+							$internalmwstarray[$mwstsatz]['brutto'] += $rowtotal;
+							$internalmwstarray[$mwstsatz]['netto'] += $rowtotal - $rowmwst;
+							$addupvat += $rowmwst;
+							$internaladdupsalesvat += $rowmwst;
+
+							$htmltemp .= '
+								<td>' . number_format($rowtotal - $rowmwst, '2', ',', '.') . ' €</td>
+								<td>' . number_format($rowtotal, '2', ',', '.') . ' €</td>
+							</tr>';
+							$counter++;
+						}
+					}
+
+					$addupnetto = $addup - $addupvat;
+					$internaladdupsalesnetto = $internaladdupsales - $internaladdupsalesvat;
+						
+					$htmltemp .= '<tr class="summary">
+							<td colspan="4">&nbsp;</td>
+							<td>Gesamtbetrag</td>
+							<td>' . number_format($internaladdupsales, '2', ',', '.') . ' €</td>
+							<td>&nbsp;</td>
+						</tr>
+					 </table>';
+					 
+					$htmltemp .= '<p>Zusammenfassung Warenverkäufe</p><table class="taxcalc" cellpadding="4">
+					<tr class="taxes">
+						<th>Gesamt (brutto)</th>
+						<th>Gesamt (netto)</th>
+						<th>MwSt.</th>
+						<th>Brutto</th>
+						<th>Netto</th>
+						<th>MwSt.</th>
+					</tr>';
+					$mwstfirst = TRUE;
+					foreach($internalmwstarray as $mwstkey => $mwstvalue) {
+						$htmltemp .= '<tr>';
+						
+						if($mwstfirst) {
+							$htmltemp .= '<td>' . number_format($internaladdupsales, '2', ',', '.') . ' €</td>
+							<td>' . number_format($internaladdupsalesnetto, '2', ',', '.') . ' €</td>';
+							$mwstfirst = FALSE;
+						}
+						else {
+							$htmltemp .= '<td colspan="2">&nbsp;</td>';
+						}
+							
+						$htmltemp .= '
+							<td>' . number_format($mwstkey, '2', ',', '.') . ' %</td>
+							<td>' . number_format($mwstvalue['brutto'], '2', ',', '.') . ' €</td>
+							<td>' . number_format($mwstvalue['netto'], '2', ',', '.') . ' €</td>
+							<td>' . number_format($mwstvalue['mwst'], '2', ',', '.') . ' €</td>
+						</tr>';
+					}
+					$htmltemp .= '
+					</table><br /><br />';
+				}
+				
+				$internaladdupcommission = 0;
+				$internaladdupcommissionnetto = 0;
+				$counter = 1;
+				$internalmwstarray = array();
+				$internaladdupcommissionvat = 0;
+				if($invoiced_items['commission']) {
+				
+					$htmltemp .= '<p style="font-size: large;"><strong>Ihre Regiomino Gebühren</strong></p><table cellpadding="4">
+								<tr class="rechnungsposheader">
+									<th>Vertragspartner</th><th>Typ</th><th>Datum</th><th>MwSt.</th><th>Netto</th><th>Brutto</th>
+								</tr>';
+								
+					foreach($invoiced_items['commission'] as $rechnungsnummer => $invoiced_items_value) {
+						foreach($invoiced_items_value as $mwstsatz => $positionsinfo) {
+
+							if($counter == count($invoiced_items)) {
+								$htmltemp .= '<tr class="lastrow">';
+							}
+							else {
+								$htmltemp .= '<tr class="lastrow">';	
+							}
+							$htmltemp .= '<td>' . $positionsinfo['customername'] . '</td><td>' . $positionsinfo['type'] . '</td><td>' . $positionsinfo['invoicecreated'] . '<br /><font style="font-size: small;">Rechnung ' . $rechnungsnummer . '</font></td><td>' . number_format($mwstsatz, "2", ",", ".") . ' %</td>';
+							
+							$rowtotal = round($positionsinfo['total'], 2);
+							$addup += $rowtotal;
+							$internaladdupcommission += $rowtotal;
+							$rowmwst = round($rowtotal * $mwstsatz / (100 + $mwstsatz), 2);
+							$mwstarray[$mwstsatz]['mwst'] += $rowmwst;
+							$mwstarray[$mwstsatz]['brutto'] += $rowtotal;
+							$mwstarray[$mwstsatz]['netto'] += $rowtotal - $rowmwst;
+							$internalmwstarray[$mwstsatz]['mwst'] += $rowmwst;
+							$internalmwstarray[$mwstsatz]['brutto'] += $rowtotal;
+							$internalmwstarray[$mwstsatz]['netto'] += $rowtotal - $rowmwst;
+							$addupvat += $rowmwst;
+							$internaladdupcommissionvat += $rowmwst;
+
+							$htmltemp .= '
+								<td>' . number_format($rowtotal - $rowmwst, '2', ',', '.') . ' €</td>
+								<td>' . number_format($rowtotal, '2', ',', '.') . ' €</td>
+							</tr>';
+							$counter++;
+						}
+					}
+
+					$addupnetto = $addup - $addupvat;
+					$internaladdupcommissionnetto = $internaladdupcommission - $internaladdupcommissionvat;
+						
+					$htmltemp .= '<tr class="summary">
+							<td colspan="4">&nbsp;</td>
+							<td>Gesamtbetrag</td>
+							<td>' . number_format($internaladdupcommission, '2', ',', '.') . ' €</td>
+							<td>&nbsp;</td>
+						</tr>
+					 </table>';
+					 
+					$htmltemp .= '<p>Zusammenfassung Regiomino Gebühren</p><table class="taxcalc" cellpadding="4">
+					<tr class="taxes">
+						<th>Gesamt (brutto)</th>
+						<th>Gesamt (netto)</th>
+						<th>MwSt.</th>
+						<th>Brutto</th>
+						<th>Netto</th>
+						<th>MwSt.</th>
+					</tr>';
+					$mwstfirst = TRUE;
+					foreach($internalmwstarray as $mwstkey => $mwstvalue) {
+						$htmltemp .= '<tr>';
+						
+						if($mwstfirst) {
+							$htmltemp .= '<td>' . number_format($internaladdupcommission, '2', ',', '.') . ' €</td>
+							<td>' . number_format($internaladdupcommissionnetto, '2', ',', '.') . ' €</td>';
+							$mwstfirst = FALSE;
+						}
+						else {
+							$htmltemp .= '<td colspan="2">&nbsp;</td>';
+						}
+							
+						$htmltemp .= '
+							<td>' . number_format($mwstkey, '2', ',', '.') . ' %</td>
+							<td>' . number_format($mwstvalue['brutto'], '2', ',', '.') . ' €</td>
+							<td>' . number_format($mwstvalue['netto'], '2', ',', '.') . ' €</td>
+							<td>' . number_format($mwstvalue['mwst'], '2', ',', '.') . ' €</td>
+						</tr>';
+					}
+					$htmltemp .= '
+					</table><br /><br />';
+				}
+				
+				$internaladdupshipping = 0;
+				$internaladdupshippingnetto = 0;
+				$counter = 1;
+				$internalmwstarray = array();
+				$internaladdupshippingvat = 0;
+				if($invoiced_items['shipping']) {
+				
+					$htmltemp .= '<p style="font-size: large;"><strong>Ihre Versandkosten</strong></p><table cellpadding="4">
+								<tr class="rechnungsposheader">
+									<th>Vertragspartner</th><th>Typ</th><th>Datum</th><th>MwSt.</th><th>Netto</th><th>Brutto</th>
+								</tr>';
+								
+					foreach($invoiced_items['shipping'] as $rechnungsnummer => $invoiced_items_value) {
+						foreach($invoiced_items_value as $mwstsatz => $positionsinfo) {
+
+							if($counter == count($invoiced_items)) {
+								$htmltemp .= '<tr class="lastrow">';
+							}
+							else {
+								$htmltemp .= '<tr class="lastrow">';	
+							}
+							$htmltemp .= '<td>' . $positionsinfo['customername'] . '</td><td>' . $positionsinfo['type'] . '</td><td>' . $positionsinfo['invoicecreated'] . '<br /><font style="font-size: small;">Rechnung ' . $rechnungsnummer . '</font></td><td>' . number_format($mwstsatz, "2", ",", ".") . ' %</td>';
+							
+							$rowtotal = round($positionsinfo['total'], 2);
+							$addup += $rowtotal;
+							$internaladdupshipping += $rowtotal;
+							$rowmwst = round($rowtotal * $mwstsatz / (100 + $mwstsatz), 2);
+							$mwstarray[$mwstsatz]['mwst'] += $rowmwst;
+							$mwstarray[$mwstsatz]['brutto'] += $rowtotal;
+							$mwstarray[$mwstsatz]['netto'] += $rowtotal - $rowmwst;
+							$internalmwstarray[$mwstsatz]['mwst'] += $rowmwst;
+							$internalmwstarray[$mwstsatz]['brutto'] += $rowtotal;
+							$internalmwstarray[$mwstsatz]['netto'] += $rowtotal - $rowmwst;
+							$addupvat += $rowmwst;
+							$internaladdupshippingvat += $rowmwst;
+
+							$htmltemp .= '
+								<td>' . number_format($rowtotal - $rowmwst, '2', ',', '.') . ' €</td>
+								<td>' . number_format($rowtotal, '2', ',', '.') . ' €</td>
+							</tr>';
+							$counter++;
+						}
+					}
+
+					$addupnetto = $addup - $addupvat;
+					$internaladdupshippingnetto = $internaladdupshipping - $internaladdupshippingvat;
+						
+					$htmltemp .= '<tr class="summary">
+							<td colspan="4">&nbsp;</td>
+							<td>Gesamtbetrag</td>
+							<td>' . number_format($internaladdupshipping, '2', ',', '.') . ' €</td>
+							<td>&nbsp;</td>
+						</tr>
+					 </table>';
+					 
+					$htmltemp .= '<p>Zusammenfassung Versandkosten</p><table class="taxcalc" cellpadding="4">
+					<tr class="taxes">
+						<th>Gesamt (brutto)</th>
+						<th>Gesamt (netto)</th>
+						<th>MwSt.</th>
+						<th>Brutto</th>
+						<th>Netto</th>
+						<th>MwSt.</th>
+					</tr>';
+					$mwstfirst = TRUE;
+					foreach($internalmwstarray as $mwstkey => $mwstvalue) {
+						$htmltemp .= '<tr>';
+						
+						if($mwstfirst) {
+							$htmltemp .= '<td>' . number_format($internaladdupshipping, '2', ',', '.') . ' €</td>
+							<td>' . number_format($internaladdupshippingnetto, '2', ',', '.') . ' €</td>';
+							$mwstfirst = FALSE;
+						}
+						else {
+							$htmltemp .= '<td colspan="2">&nbsp;</td>';
+						}
+							
+						$htmltemp .= '
+							<td>' . number_format($mwstkey, '2', ',', '.') . ' %</td>
+							<td>' . number_format($mwstvalue['brutto'], '2', ',', '.') . ' €</td>
+							<td>' . number_format($mwstvalue['netto'], '2', ',', '.') . ' €</td>
+							<td>' . number_format($mwstvalue['mwst'], '2', ',', '.') . ' €</td>
+						</tr>';
+					}
+					$htmltemp .= '
+					</table><br /><br />';
+				}
+				
+				
+				$internaladdupshippingsales = 0;
+				$internaladdupshippingsalesnetto = 0;
+				$counter = 1;
+				$internalmwstarray = array();
+				$internaladdupshippingsalesvat = 0;
+				if($invoiced_items['shipping_sales']) {
+				
+					$htmltemp .= '<p style="font-size: large;"><strong>Ihre Versandrechnungen an den Kunden</strong></p><table cellpadding="4">
+								<tr class="rechnungsposheader">
+									<th>Vertragspartner</th><th>Typ</th><th>Datum</th><th>MwSt.</th><th>Netto</th><th>Brutto</th>
+								</tr>';
+								
+					foreach($invoiced_items['shipping_sales'] as $rechnungsnummer => $invoiced_items_value) {
+						foreach($invoiced_items_value as $mwstsatz => $positionsinfo) {
+
+							if($counter == count($invoiced_items)) {
+								$htmltemp .= '<tr class="lastrow">';
+							}
+							else {
+								$htmltemp .= '<tr class="lastrow">';	
+							}
+							$htmltemp .= '<td>' . $positionsinfo['customername'] . '</td><td>' . $positionsinfo['type'] . '</td><td>' . $positionsinfo['invoicecreated'] . '<br /><font style="font-size: small;">Rechnung ' . $rechnungsnummer . '</font></td><td>' . number_format($mwstsatz, "2", ",", ".") . ' %</td>';
+							
+							$rowtotal = round($positionsinfo['total'], 2);
+							$addup += $rowtotal;
+							$internaladdupshippingsales += $rowtotal;
+							$rowmwst = round($rowtotal * $mwstsatz / (100 + $mwstsatz), 2);
+							$mwstarray[$mwstsatz]['mwst'] += $rowmwst;
+							$mwstarray[$mwstsatz]['brutto'] += $rowtotal;
+							$mwstarray[$mwstsatz]['netto'] += $rowtotal - $rowmwst;
+							$internalmwstarray[$mwstsatz]['mwst'] += $rowmwst;
+							$internalmwstarray[$mwstsatz]['brutto'] += $rowtotal;
+							$internalmwstarray[$mwstsatz]['netto'] += $rowtotal - $rowmwst;
+							$addupvat += $rowmwst;
+							$internaladdupshippingsalesvat += $rowmwst;
+
+							$htmltemp .= '
+								<td>' . number_format($rowtotal - $rowmwst, '2', ',', '.') . ' €</td>
+								<td>' . number_format($rowtotal, '2', ',', '.') . ' €</td>
+							</tr>';
+							$counter++;
+						}
+					}
+
+					$addupnetto = $addup - $addupvat;
+					$internaladdupshippingsalesnetto = $internaladdupshippingsales - $internaladdupshippingsalesvat;
+						
+					$htmltemp .= '<tr class="summary">
+							<td colspan="4">&nbsp;</td>
+							<td>Gesamtbetrag</td>
+							<td>' . number_format($internaladdupshippingsales, '2', ',', '.') . ' €</td>
+							<td>&nbsp;</td>
+						</tr>
+					 </table>';
+					 
+					 $htmltemp .= '<table class="taxcalc" cellpadding="4">
+					<tr class="taxes">
+						<th>Gesamt (brutto)</th>
+						<th>Gesamt (netto)</th>
+						<th>MwSt.</th>
+						<th>Brutto</th>
+						<th>Netto</th>
+						<th>MwSt.</th>
+					</tr>';
+					$mwstfirst = TRUE;
+					foreach($internalmwstarray as $mwstkey => $mwstvalue) {
+						$htmltemp .= '<tr>';
+						
+						if($mwstfirst) {
+							$htmltemp .= '<td>' . number_format($internaladdupshippingsales, '2', ',', '.') . ' €</td>
+							<td>' . number_format($internaladdupshippingsalesnetto, '2', ',', '.') . ' €</td>';
+							$mwstfirst = FALSE;
+						}
+						else {
+							$htmltemp .= '<td colspan="2">&nbsp;</td>';
+						}
+							
+						$htmltemp .= '
+							<td>' . number_format($mwstkey, '2', ',', '.') . ' %</td>
+							<td>' . number_format($mwstvalue['brutto'], '2', ',', '.') . ' €</td>
+							<td>' . number_format($mwstvalue['netto'], '2', ',', '.') . ' €</td>
+							<td>' . number_format($mwstvalue['mwst'], '2', ',', '.') . ' €</td>
+						</tr>';
+					}
+					$htmltemp .= '
+					</table>
+					 <br /><br /><br />';
+				}
+				
+				$html .= '<p style="font-size: large;"><strong>Zusammenfassung</strong></p><table class="taxcalcheader" cellpadding="4"><tr class="taxes">
+					<th class="firstcolumn">Gesamt (brutto)</th>
+					<th class="firstcolumn">Gesamt (netto)</th>
+					<th class="desccolumn">Bezeichnung</th>
+				</tr>';
+				$html .= '<tr><td class="firstcolumn">' . number_format($internaladdupsales, '2', ',', '.') . ' €</td><td class="firstcolumn">' . number_format($internaladdupsalesnetto, '2', ',', '.') . ' €</td><td class="desccolumn">Warenverkäufe</td></tr>';
+				$html .= '<tr><td class="firstcolumn">' . number_format($internaladdupcommission, '2', ',', '.') . ' €</td><td class="firstcolumn">' . number_format($internaladdupcommissionnetto, '2', ',', '.') . ' €</td><td class="desccolumn">Regiomino Gebühr ' . number_format($seller_profile->field_commission[LANGUAGE_NONE][0]['value'], '2', ',', '.') . '%</td></tr>';
+				$html .= '<tr><td class="firstcolumn">' . number_format($internaladdupshipping, '2', ',', '.') . ' €</td><td class="firstcolumn">' . number_format($internaladdupshippingnetto, '2', ',', '.') . ' €</td><td class="desccolumn">Versandkosten</td></tr>';
+				if($internaladdupshippingsales > 0) $html .= '<tr><td class="firstcolumn">' . number_format($internaladdupshippingsales, '2', ',', '.') . ' €</td><td>Versandrechnungen an Kunden</td></tr>';
+				$html .= '</table><table class="taxcalcheader" cellpadding="4">
+				<tr class="taxes">
+					<th class="firstcolumn">Gesamt (brutto)</th>
+					<th>Gesamt (netto)</th>
+					<th>MwSt.</th>
+					<th>Brutto</th>
+					<th>Netto</th>
+					<th>MwSt.</th>
+				</tr>';
+				$mwstfirst = TRUE;
+				foreach($mwstarray as $mwstkey => $mwstvalue) {
+					$html .= '<tr>';
+					
+					if($mwstfirst) {
+						$html .= '<td class="firstcolumn">' . number_format($addup, '2', ',', '.') . ' €</td>
+						<td>' . number_format($addupnetto, '2', ',', '.') . ' €</td>';
+						$mwstfirst = FALSE;
+					}
+					else {
+						$html .= '<td colspan="2">&nbsp;</td>';
+					}
+						
+					$html .= '
+						<td>' . number_format($mwstkey, '2', ',', '.') . ' %</td>
+						<td>' . number_format($mwstvalue['brutto'], '2', ',', '.') . ' €</td>
+						<td>' . number_format($mwstvalue['netto'], '2', ',', '.') . ' €</td>
+						<td>' . number_format($mwstvalue['mwst'], '2', ',', '.') . ' €</td>
+					</tr>';
+				}
+				$html .= '
+				</table>
+				<p>Folgende Auszahlung wurde veranlasst:</p>
+				<p>Betrag: ' . number_format($addup, '2', ',', '.') . ' €<br />
+				Kontoinhaber: ' . $seller_profile->field_bankaccountholder[LANGUAGE_NONE][0]['value'] . '<br />
+				Kontonummer: ' . $seller_profile->field_bankaccount[LANGUAGE_NONE][0]['value'] . '<br />
+				BLZ: ' . $seller_profile->field_bankcode[LANGUAGE_NONE][0]['value'] . '<br />
+				IBAN: ' . $seller_profile->field_iban[LANGUAGE_NONE][0]['value'] . '<br />
+				BIC: ' . $seller_profile->field_bic[LANGUAGE_NONE][0]['value'] . '</p>';
+				
+				
+				$html .= $htmltemp;
+				
+				$html .= '
+				<br />
+				<br />
+				<br />
+				<p style="font-size: large;"><strong>Haben Sie Fragen?</strong></p>
+				<p>Bitte kontaktieren Sie uns per Mail unter support@regiomino.de</p>				 
+				';
+
+				$new_node->field_total['und'][0]['value'] = $addup;
+
+				$tcpdf->writeHTML($html);
+				$tcpdf->Output("private://rsum_seller_tmp.pdf", "F");
+				$filepath = "private://rsum_seller_tmp.pdf";
+				// Create managed File object and associate with Image field.
+				$file = (object) array(
+					'uid' => 1,
+					'uri' => $filepath,
+					'filemime' => file_get_mimetype($filepath),
+					'status' => 1,
+					'display' => 1,
+				);
+				// We save the file to the root of the files directory.
+				$file = file_copy($file, "private://rsum_seller_$newnid.pdf");
+				$new_node->field_invoice_file[LANGUAGE_NONE][0] = (array)$file;
+				node_save($new_node);
+			}
+		}
+	}
+}
+
+function regiomino_invoice_sale($noarray) {
+	if($noarray) {
+		$commarray = array();
+		foreach($noarray as $key => $value) {
+			$result = db_select('regiomino_order', 'bo')
+				->fields('bo', array('order_id', 'product_count', 'created', 'seller_company', 'seller_street1', 'seller_street2', 'seller_city', 'seller_postal_code', 'shipping', 'billing_first_name', 'billing_last_name', 'billing_street1', 'billing_street2', 'billing_city', 'billing_postal_code', 'uid', 'product_price', 'order_process_id'))
+				->condition('nid', $value->nid)
+				->condition('order_status', 'delivered')
+				->execute();
+			$counter = 0;
+			while($record = $result->fetchAssoc()) {
+				$product_count = (int)$record['product_count'];
+				$sellerstring = $value->uid . $record['seller_company'] . $record['seller_street1'] . $record['seller_street2'] . $record['seller_postal_code'] . $record['seller_city'];
+				$sellerhash = md5($sellerstring);
+				$buyerstring = $record['uid'] . $record['billing_first_name'] . $record['billing_last_name'] . $record['billing_street1'] . $record['billing_street2'] . $record['billing_postal_code'] . $record['billing_city'];
+				$buyerhash = md5($buyerstring);
+				$commarray[$sellerhash]['seller_info']['uid'] = $value->uid;
+				$commarray[$sellerhash]['seller_info']['seller_company'] = $record['seller_company'];
+				$commarray[$sellerhash]['seller_info']['seller_street1'] = $record['seller_street1'];
+				$commarray[$sellerhash]['seller_info']['seller_street2'] = $record['seller_street2'];
+				$commarray[$sellerhash]['seller_info']['seller_city'] = $record['seller_city'];
+				$commarray[$sellerhash]['seller_info']['seller_postal_code'] = $record['seller_postal_code'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['buyer_info']['uid'] = $record['uid'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['buyer_info']['billing_first_name'] = $record['billing_first_name'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['buyer_info']['billing_last_name'] = $record['billing_last_name'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['buyer_info']['billing_street1'] = $record['billing_street1'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['buyer_info']['billing_street2'] = $record['billing_street2'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['buyer_info']['billing_city'] = $record['billing_city'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['buyer_info']['billing_postal_code'] = $record['billing_postal_code'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['orders'][$record['order_id']]['amount'] = $record['product_count'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['orders'][$record['order_id']]['paid'] = $record['product_price'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['orders'][$record['order_id']]['final'] = $record['product_price'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['orders'][$record['order_id']]['order'] = $record['shipping'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['orders'][$record['order_id']]['order_process'] = $record['order_process_id'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['orders'][$record['order_id']]['created'] = $record['created'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['orders'][$record['order_id']]['tax'] = $value->field_salestax['und'][0]['value'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['orders'][$record['order_id']]['unit'] = $value->field_packingunit['und'][0]['value'];
+				$commarray[$sellerhash]['buyers'][$buyerhash]['orders'][$record['order_id']]['title'] = $value->title;
+				$commarray[$sellerhash]['buyers'][$buyerhash]['orders'][$record['order_id']]['nid'] = $value->nid;
+				//$commarray[$sellerhash][$buyerhash][$record['order_id']]['node'] = $value;
+				$counter++;
+			}
+		}
+		
+		// Never make an instance of TCPDF or TCPDFDrupal classes manually.
+		// Use tcpdf_get_instance() instead.
+		$tcpdf_params = array(
+			'unicode' => TRUE,
+			'encoding' => 'UTF-8',
+		);
+		// TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+		$tcpdf_class = array(
+			'class' => 'TCPDFRegiomino',
+			'filetype' => 'inc',
+			'filename' => 'regiomino_invoice.class',
+			'module' => 'regiomino_invoice',
+		);
+		// regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+		$tcpdf_config = array(
+			'filetype' => 'inc',
+			'filename' => 'regiomino_invoice.config',
+			'module' => 'regiomino_invoice', 
+		);
+		foreach($commarray as $sellerkey => $sellervalue) {
+		
+			$sellerinfo = $sellervalue['seller_info']; //Seller Info
+			$seller_user = user_load($sellerinfo['uid']);
+			
+			foreach($sellervalue['buyers'] as $buyerkey => $buyervalue) {
+			
+				$buyerinfo = $buyervalue['buyer_info']; //Seller Info
+				$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+
+				/* DrupalInitialize() is an extra method added to TCPDFDrupal that initializes
+				*  some TCPDF variables (like font types), and makes possible to change the
+				*  default header or footer without creating a new class.
+				*/
+				$tcpdf->DrupalInitialize(array(
+					'author' => 'Regiomino GmbH',
+					'title' => 'Rechnung von ' . $sellerinfo['seller_company'],
+					'subject' => 'Rechnung über Ihre Bestellungen',
+					'keywords' => 'Regiomino, Rechnung, Bestellungen, Einkauf, Lebensmittel',
+					'footer' => array(
+						'html' => '&nbsp;',
+					),
+					'header' => array(
+						'html' => '&nbsp;',
+					),
+				));
+				
+				$new_node = new stdClass();
+				$new_node->type = 'invoice_sale';
+				$new_node->is_new = TRUE;
+				$new_node->title = t('Invoice for your order items');
+				node_object_prepare($new_node);
+				$new_node->language = 'de';
+				$new_node->uid = $buyervalue['buyer_info']['uid'];
+				foreach($buyervalue['orders'] as $orderkey => $ordervalue) {
+					$new_node->field_order_item['und'][]['target_id'] = $orderkey;
+				}
+				$new_node->field_invoicing_entity['und'][0]['target_id'] = $seller_user->field_profilereference['und'][0]['target_id'];
+				$new_node = node_submit($new_node);
+				node_save($new_node);
+				$newnid = $new_node->nid;
+				
+				$nicedate = date('d.m.Y', $new_node->created);
+				
+				$html = '				 <br />
+					 <br />
+					 <br />
+					 <br />
+					 <br />
+					 <br />
+					 <br />
+					<p style="color: rgb(189, 23, 35); font-size: x-small;">' . $sellerinfo['seller_company'] . ' ' . $sellerinfo['seller_street1'] . ' ' . $sellerinfo['seller_street2'] . ' ' . $sellerinfo['seller_postal_code'] . ' ' . $sellerinfo['seller_city'] . '</p>
+					<p>' . $buyerinfo['billing_first_name'] . ' ' . $buyerinfo['billing_last_name'] . '<br />' . $buyerinfo['billing_street1'] . '<br />' . $buyerinfo['billing_street2'] . '<br />' . $buyerinfo['billing_postal_code'] . ' ' . $buyerinfo['billing_city'] . '</p>
+					<table border="0">
+						<tr>
+							<td width="320">&nbsp;</td><td width="100"><strong>Rechnungsnummer</strong></td><td width="60">' . $newnid . '</td>
+						</tr>
+						<tr>
+							<td width="320">&nbsp;</td><td width="100"><strong>Rechnungsdatum</strong></td><td width="60">' . $nicedate . '</td>
+						</tr>';
+						
+					$seller_profile = node_load($seller_user->field_profilereference['und'][0]['target_id']);
+					$kleinunternehmer = $seller_profile->field_kleinunternehmer[LANGUAGE_NONE][0]['value'];
+					$taxnumber = $seller_profile->field_taxnumber[LANGUAGE_NONE][0]['value'];
+					if($kleinunternehmer != 1 && !empty($taxnumber)) {
+					$html .= '	
+						<tr>
+							<td width="320">&nbsp;</td><td width="100"><strong>UStID / StNr.</strong></td><td width="60">' . $taxnumber . '</td>
+						</tr>';
+					}
+						
+						
+						$html .= '
+					</table>
+					<br />
+					<p style="font-size: large;"><strong>Rechnung von ' . $sellerinfo['seller_company'] . '</strong></p>
+					<br />
+					<br />
+					<p>Sehr geehrte Damen und Herren,<br /><br />vielen Dank für Ihren Einkauf bei uns. Die Zahlung des Rechnungsbetrages erfolgte bereits bei Bestellung, daher ist keine weitere Aktion Ihrerseits notwendig.</p>
+					<style>
+						tr.rechnungsposheader th {
+							border-bottom: 0.5px solid #000000;
+							font-weight: bold;
+						}
+						tr.taxes th {
+							border-top: 0.5px solid #92BF20;
+							font-weight: bold;
+						}
+						tr.lastrow td {
+							border-bottom: 0.5px solid #000000;
+						}
+						tr.summary td {
+							font-weight: bold;
+						}
+						table.taxcalc {
+							font-size: small;
+						}
+					</style>
+					<table cellpadding="4">
+						<tr class="rechnungsposheader">
+							<th>Angebotsnr.</th><th>Anzahl</th><th>Einzelpreis</th><th>MwSt.</th><th>Gesamt</th><th>Bezahlt</th>
+						</tr>';
+					
+					$counter = 1;
+					$addup = 0;
+					$addupvat = 0;
+					$mwstaddup = 0;
+					$mwstarray = array();
+					
+					foreach($buyervalue['orders'] as $orderkey => $ordervalue) {
+						/*
+						Order ID is $orderkey
+						$ordervalue['amount']
+						$ordervalue['paid']
+						$ordervalue['final']
+						$ordervalue['order']
+						$ordervalue['order_process']
+						$ordervalue['created']
+						$ordervalue['tax']
+						$ordervalue['unit']
+						$ordervalue['title']
+						$ordervalue['nid']
+						*/
+						if($counter == count($buyervalue['orders'])) {
+							$html .= '<tr class="lastrow">';
+						}
+						else {
+							$html .= '<tr class="lastrow">';	
+						}
+						$html .= '<td>' . $ordervalue['nid'] . ' (' . $ordervalue['title'] . ')';
+						$html .= '<br /><font style="font-size: small;">Bestellnr. ' . $ordervalue['order_process'] . ' vom ' . date('d.m.Y', $ordervalue['created']) . ')</font>';
+						$rowtotal = round($ordervalue['final'] * $ordervalue['amount'], 2);
+						$paidtotal = round($ordervalue['paid'] * $ordervalue['amount'], 2);
+						$addup += $rowtotal;
+						$rowmwst = round($rowtotal * $ordervalue['tax'] / (100 + $ordervalue['tax']), 2);
+						$mwstarray[$ordervalue['tax']]['mwst'] += $rowmwst;
+						$mwstarray[$ordervalue['tax']]['brutto'] += $rowtotal;
+						$mwstarray[$ordervalue['tax']]['netto'] += $rowtotal - $rowmwst;
+						$addupvat += $rowmwst;
+						$difference = $paidtotal - $rowtotal;
+						$html .= '</td>
+							<td>' . $ordervalue['amount'] . '</td>
+							<td>' . number_format($ordervalue['final'], '2', ',', '.') . ' €</td>
+							<td>' . number_format($ordervalue['tax'], '2', ',', '.') . ' %</td>
+							<td>' . number_format($rowtotal, '2', ',', '.') . ' €</td>
+							<td>' . number_format($paidtotal, '2', ',', '.') . ' €</td>
+						</tr>';
+						$counter++;
+						
+						$update = db_update('regiomino_order')
+							->fields(
+								array(
+									'invoice' => $newnid,
+									'order_status' => 'billed',
+								)
+							)
+							->condition('order_id', $orderkey)
+							->execute();
+					}
+
+					$addupnetto = $addup - $addupvat;
+						
+					$html .= '<tr class="summary">
+							<td colspan="3">&nbsp;</td>
+							<td>Gesamtbetrag</td>
+							<td>' . number_format($addup, '2', ',', '.') . ' €</td>
+							<td>&nbsp;</td>
+						</tr>
+						<tr>
+							<td colspan="3">&nbsp;</td>
+							<td colspan="3"><span style="color: rgb(146, 191, 32);"><em>Gesamtbetrag bereits bezahlt</em></span></td>
+						</tr>
+					 </table>
+					 <br />
+					 <br />
+					 <br />
+					 <table class="taxcalc" cellpadding="4">
+						<tr class="taxes">
+							<th>Rechnung brutto</th>
+							<th>Rechnung netto</th>
+							<th>MwSt.</th>
+							<th>Brutto</th>
+							<th>Netto</th>
+							<th>MwSt.</th>
+						</tr>';
+						$mwstfirst = TRUE;
+						foreach($mwstarray as $mwstkey => $mwstvalue) {
+							$html .= '<tr>';
+							
+							if($mwstfirst) {
+								$html .= '<td>' . number_format($addup, '2', ',', '.') . ' €</td>
+								<td>' . number_format($addupnetto, '2', ',', '.') . ' €</td>';
+								$mwstfirst = FALSE;
+							}
+							else {
+								$html .= '<td colspan="2">&nbsp;</td>';
+							}
+								
+							$html .= '
+								<td>' . number_format($mwstkey, '2', ',', '.') . ' %</td>
+								<td>' . number_format($mwstvalue['brutto'], '2', ',', '.') . ' €</td>
+								<td>' . number_format($mwstvalue['netto'], '2', ',', '.') . ' €</td>
+								<td>' . number_format($mwstvalue['mwst'], '2', ',', '.') . ' €</td>
+							</tr>';
+						}
+						$html .= '
+					 </table>
+					 
+					 <br />
+					 <br />
+					 <br />
+					 
+					 <p style="font-size: large;"><strong>Haben Sie Fragen?</strong></p>
+					 <p>Bitte kontaktieren Sie uns per Mail unter support@regiomino.de</p>				 
+					 ';
+					 
+					
+				$new_node->field_total['und'][0]['value'] = $addup;
+
+				$tcpdf->writeHTML($html);
+
+				$tcpdf->Output("private://r_sale_tmp.pdf", "F");
+				$filepath = "private://r_sale_tmp.pdf";
+				// Create managed File object and associate with Image field.
+				$file = (object) array(
+					'uid' => 1,
+					'uri' => $filepath,
+					'filemime' => file_get_mimetype($filepath),
+					'status' => 1,
+					'display' => 1,
+				);
+				// We save the file to the root of the files directory.
+				$file = file_copy($file, "private://r_sale_$newnid.pdf");
+				$new_node->field_invoice_file[LANGUAGE_NONE][0] = (array)$file;
+				node_save($new_node);
+								
+				//Write to userpoints
+				$uid = $sellerinfo['uid'];
+				$negativeprice = $addup;
+				$upointparams = array(
+					'uid' => $uid,
+					'points' => $negativeprice,
+					'description' => t('Invoice @number', array('@number' => $newnid)),
+					'reference' => 'incoive_' . $newnid,
+					'display' => FALSE,
+					'tid' => 447,
+					'operation' => $seller_profile->type,
+					'entity_id' => $newnid,
+					'entity_type' => 'node',
+				);
+				$upret = userpoints_userpointsapi($upointparams);
+				$txnbalance = (float)userpoints_get_current_points($uid, 447);
+				$txn_id = $upret['transaction']['txn_id'];
+				$txn_query = db_update('{userpoints_txn}')
+					->fields(
+						array(
+							'balance' => $txnbalance,
+						)
+					)
+					->condition('txn_id', $txn_id)
+					->execute();
+				
+			}
+			
+		}
+		watchdog('invoice', 'Invoices for order items have been generated');
+	}
+}
+
+function regiomino_invoice_sale_shp() {
+  // Never make an instance of TCPDF or TCPDFDrupal classes manually.
+  // Use tcpdf_get_instance() instead.
+	$tcpdf_params = array(
+    'unicode' => TRUE,
+    'encoding' => 'UTF-8',
+  );
+  // TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+  $tcpdf_class = array(
+    'class' => 'TCPDFRegiomino',
+    'filetype' => 'inc',
+    'filename' => 'regiomino_invoice.class',
+    'module' => 'regiomino_invoice',
+  );
+  // regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+  $tcpdf_config = array(
+    'filetype' => 'inc',
+    'filename' => 'regiomino_invoice.config',
+    'module' => 'regiomino_invoice', 
+  );
+
+	$query = db_select('regiomino_order_shipping', 's');
+	$query->join('regiomino_order', 'o', 's.shipping_id = o.shipping');
+	$query->groupBy('s.shipping_id');
+	$query->fields('s', array('shipping_id', 'shipping_price'));
+	$query->fields('o', array('created', 'nid', 'seller_company', 'seller_street1', 'seller_street2', 'seller_city', 'seller_postal_code', 'uid', 'billing_first_name', 'billing_last_name', 'billing_street1', 'billing_street2', 'billing_city', 'billing_postal_code', 'order_process_id'));
+	$query->condition('s.invoice_sale', NULL);
+	$query->condition('o.order_status', 'canceled', '!=');
+	$query->condition('o.order_status', 'processing', '!=');
+	$query->condition('o.order_status', 'completed', '!=');
+	$query->condition('o.order_status', 'pending', '!=');
+	$query->range(0,100);
+	$result = $query->execute();
+	$numrows = $result->rowCount();
+ 	if($numrows > 0) {
+		while($row = $result->fetchAssoc()) {	
+			if($row['shipping_price'] > 0) {
+				$customer_user = user_load($row['uid']);
+				$shipping_id = $row['shipping_id']; //Make this the actual shipping_id				
+				$product_node = node_load($row['nid']);
+				$seller_user = user_load($product_node->uid);
+				$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+				
+				/* DrupalInitialize() is an extra method added to TCPDFDrupal that initializes
+				*  some TCPDF variables (like font types), and makes possible to change the
+				*  default header or footer without creating a new class.
+				*/
+				$tcpdf->DrupalInitialize(array(
+					'author' => 'Regiomino GmbH',
+					'title' => 'Rechnung von ' . $row['seller_company'],
+					'subject' => 'Rechnung über die Versandgebühren Ihrer Bestellung',
+					'keywords' => 'Regiomino, Rechnung, Versand, Einkauf, Lebensmittel',
+					'footer' => array(
+						'html' => '&nbsp;',
+					),
+					'header' => array(
+						'html' => '&nbsp;',
+					),
+				));
+
+				$new_node = new stdClass();
+				$new_node->type = 'invoice_shipping_sale';
+				$new_node->is_new = TRUE;
+				$new_node->title = t('Invoice for shipping fee of order @number', array('@number' => $row['order_process_id']));
+				node_object_prepare($new_node);
+				$new_node->language = 'de';
+				$new_node->uid = $row['uid'];
+				$new_node->field_shipping_id = array(
+					'und' => array(
+						0 => array(
+							'target_id' => $shipping_id,
+						),
+					),
+				);
+				$new_node->field_invoicing_entity = array(
+					'und' => array(
+						0 => array(
+							'target_id' => $seller_user->field_profilereference['und'][0]['target_id'],
+						),
+					),
+				);
+				$new_node = node_submit($new_node);
+				$new_node->created = $row['created'];
+				$new_node->changed = $row['created'];
+				node_save($new_node);
+				$newnid = $new_node->nid;
+				
+				$seller_profile = node_load($seller_user->field_profilereference['und'][0]['target_id']);
+				$kleinunternehmer = $seller_profile->field_kleinunternehmer[LANGUAGE_NONE][0]['value'];
+				$taxnumber = $seller_profile->field_taxnumber[LANGUAGE_NONE][0]['value'];
+				
+				$nicedate = date('d.m.Y', $row['created']);
+				$price = round($row['shipping_price'], 2);
+				$price_formatted = number_format(round($price, 2), 2, ",", ".") . ' €';
+				$mwst = 19;
+				//$mwst = $seller_profile->field_deliverytax[LANGUAGE_NONE][0]['value'];
+				if($kleinunternehmer) $mwst = 0;
+				$amount = 1;
+				$mwst_formatted = number_format(round($mwst, 2), 2, ",", ".");
+				$mwstshare = round($price * $mwst / (100 + $mwst), 2);
+				$mwsthare_formatted = number_format(round($mwstshare, 2), 2, ",", ".") . ' €';
+				$pricenetto = $price - $mwstshare;
+				$pricenetto_formatted = number_format($pricenetto, 2, ",", ".") . ' €';
+				
+				$html = '				 <br />
+					 <br />
+					 <br />
+					 <br />
+					 <br />
+					 <br />
+					 <br />
+					<p style="color: rgb(189, 23, 35); font-size: x-small;">' . $row['seller_company'] . ' - ' . $row['seller_street1'] . ' ' . $row['seller_street2'] . ' - ' . $row['seller_postal_code'] . ' ' . $row['seller_city'] . '</p>
+					<p>' . $row['billing_first_name']. ' ' . $row['billing_last_name']. '<br />' . $row['billing_street1'] . '<br />' . $row['billing_street2'] . '<br />' . $row['billing_postal_code'] . ' ' . $row['billing_city'] . '</p>
+					<table border="0">
+						<tr>
+							<td width="320">&nbsp;</td><td width="100"><strong>Rechnungsnummer</strong></td><td width="60">' . $newnid . '</td>
+						</tr>
+						<tr>
+							<td width="320">&nbsp;</td><td width="100"><strong>Bestellung</strong></td><td width="60">' . $row['order_process_id'] . '</td>
+						</tr>
+						<tr>
+							<td width="320">&nbsp;</td><td width="100"><strong>Rechnungsdatum</strong></td><td width="60">' . $nicedate . '</td>
+						</tr>';
+					
+					if($kleinunternehmer != 1 && !empty($taxnumber)) {
+					$html .= '	
+						<tr>
+							<td width="320">&nbsp;</td><td width="100"><strong>UStID / StNr.</strong></td><td width="60">' . $taxnumber . '</td>
+						</tr>';
+					}
+						
+						
+						$html .= '
+					</table>
+					<br />
+					<p style="font-size: large;"><strong>Rechnung von ' . $row['seller_company'] . '</strong></p>
+					<br />
+					<br />
+					<p>Sehr geehrte Damen und Herren,<br /><br />wir bedanken uns für Ihre Bestellung und erlauben uns, wiefolgt zu berechnen:</p>
+					<style>
+						tr.rechnungsposheader th {
+							border-bottom: 0.5px solid #000000;
+							font-weight: bold;
+						}
+						tr.taxes th {
+							border-top: 0.5px solid #92BF20;
+							font-weight: bold;
+						}
+						tr.lastrow td {
+							border-bottom: 0.5px solid #000000;
+						}
+						tr.summary td {
+							font-weight: bold;
+						}
+						table.taxcalc {
+							font-size: small;
+						}
+					</style>
+					<table cellpadding="4">
+						<tr class="rechnungsposheader">
+							<th>Leistung</th><th>Menge</th><th>MwSt.</th><th>Einzelpreis</th><th>Summe</th>
+						</tr>
+						<tr class="lastrow">
+							<td>Auslieferung Bestellung ' . $row['order_process_id'] . '</td>
+							<td>1</td>
+							<td>(1)</td>
+							<td>' . $price_formatted . '</td>
+							<td>' . $price_formatted . '</td>
+						</tr>
+						<tr class="summary">
+							<td colspan="3">&nbsp;</td>
+							<td>Gesamtbetrag</td>
+							<td>' . $price_formatted . '</td>
+						</tr>
+						<tr>
+							<td colspan="3">&nbsp;</td>
+							<td colspan="2"><span style="color: rgb(146, 191, 32);"><em>Gesamtbetrag bereits bezahlt</em></span></td>
+						</tr>
+					 </table>
+					 <br />
+					 <br />
+					 <br />
+					 <table class="taxcalc" cellpadding="4">
+						<tr class="taxes">
+							<th>Rechnung brutto</th>
+							<th>Rechnung netto</th>
+							<th>MwSt.</th>
+							<th>Brutto</th>
+							<th>Netto</th>
+							<th>MwSt.</th>
+						</tr>
+						<tr>
+							<td>' . $price_formatted . '</td>
+							<td>' . $pricenetto_formatted . '</td>
+							<td>' . $mwst_formatted . ' (1)</td>
+							<td>' . $price_formatted . '</td>
+							<td>' . $pricenetto_formatted . '</td>
+							<td>' . $mwsthare_formatted . '</td>
+						</tr>
+					 </table>
+					 
+					 <br />
+					 <br />
+					 <br />
+					 
+					 <p style="font-size: large;"><strong>Haben Sie Fragen?</strong></p>
+					 <p>Bitte kontaktieren Sie uns per Mail unter support@regiomino.de</p>				 
+					 ';
+
+				$tcpdf->writeHTML($html);
+
+				$tcpdf->Output("private://r_shp_sale_tmp.pdf", "F");
+				$filepath = "private://r_shp_sale_tmp.pdf";
+				// Create managed File object and associate with Image field.
+				$file = (object) array(
+					'uid' => 1,
+					'uri' => $filepath,
+					'filemime' => file_get_mimetype($filepath),
+					'status' => 1,
+					'display' => 1,
+				);
+				// We save the file to the root of the files directory.
+				$file = file_copy($file, "private://r_shp_sale_$newnid.pdf");
+				$new_node->field_invoice_file[LANGUAGE_NONE][0] = (array)$file;
+				
+				$new_node->field_total['und'][0]['value'] = $price;
+				
+				node_save($new_node);
+				
+				$update = db_update('regiomino_order_shipping')
+					->fields(
+						array(
+							'invoice_sale' => $newnid,
+						)
+					)
+					->condition('shipping_id', $row['shipping_id'])
+					->execute();
+					
+				//Add to sellers userpoints
+				$uid = $product_node->uid;
+				$negativeprice = (float)$price;
+				$upointparams = array(
+					'uid' => $uid,
+					'points' => $negativeprice,
+					'description' => t('Invoice @number', array('@number' => $newnid)),
+					'reference' => 'incoive_' . $newnid,
+					'display' => FALSE,
+					'tid' => 447,
+					'entity_id' => $newnid,
+					'operation' => $seller_profile->type,
+					'entity_type' => 'node',
+				);
+				$upret = userpoints_userpointsapi($upointparams);
+				$txnbalance = (float)userpoints_get_current_points($uid, 447);
+				$txn_id = $upret['transaction']['txn_id'];
+				$txn_query = db_update('{userpoints_txn}')
+					->fields(
+						array(
+							'balance' => $txnbalance,
+						)
+					)
+					->condition('txn_id', $txn_id)
+					->execute();
+				
+				watchdog('invoice', 'Invoices for shipping (sale) have been generated');
+			}
+			else {
+				$update = db_update('regiomino_order_shipping')
+					->fields(
+						array(
+							'invoice_sale' => 0,
+						)
+					)
+					->condition('shipping_id', $row['shipping_id'])
+					->execute();
+			}
+		}
+	}
+}
+
+function regiomino_invoice_shp() {
+  // Never make an instance of TCPDF or TCPDFDrupal classes manually.
+  // Use tcpdf_get_instance() instead.
+	$tcpdf_params = array(
+    'unicode' => TRUE,
+    'encoding' => 'UTF-8',
+  );
+  // TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+  $tcpdf_class = array(
+    'class' => 'TCPDFRegiomino',
+    'filetype' => 'inc',
+    'filename' => 'regiomino_invoice.class',
+    'module' => 'regiomino_invoice',
+  );
+  // regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+  $tcpdf_config = array(
+    'filetype' => 'inc',
+    'filename' => 'regiomino_invoice.config',
+    'module' => 'regiomino_invoice', 
+  );
+
+	$query = db_select('regiomino_order_shipping', 's');
+	$query->join('regiomino_order', 'o', 's.shipping_id = o.shipping');
+	$query->groupBy('s.shipping_id');
+	$query->fields('s', array('shipping_id', 'shipping_price', 'uid_p'));
+	$query->fields('o', array('created', 'nid', 'seller_company', 'seller_street1', 'seller_street2', 'seller_city', 'seller_postal_code'));
+	$query->condition('s.invoice', NULL);
+	$query->condition('o.order_status', 'canceled', '!=');
+	$query->condition('o.order_status', 'processing', '!=');
+	$query->condition('o.order_status', 'completed', '!=');
+	$query->condition('o.order_status', 'pending', '!=');
+	$query->range(0,200);
+	$result = $query->execute();
+	$numrows = $result->rowCount();
+ 	if($numrows > 0) {
+		while($row = $result->fetchAssoc()) {	
+			$shipper_user = user_load($row['uid_p']);
+			$shipper_node = node_load($shipper_user->field_profilereference_shipper['und'][0]['target_id']);
+			$shipping_id = $row['shipping_id']; //Make this the actual shipping_id
+
+			$pricequery = db_query("SELECT product_count, product_price, nid FROM {regiomino_order} WHERE shipping = :shipping", array(':shipping' => $shipping_id));
+			$netto = 0;
+			while($pricerow = $pricequery->fetchAssoc()) {
+				$priceno = node_load($pricerow['nid']);
+				$netto += regiomino_offer_get_tradingunit_moneyvalue($priceno, FALSE, FALSE, 'private', $pricerow['product_count'], 'field_tu_shipping');
+			}
+
+			$row['shipping_price'] = round($netto * 1.19, 2);
+			
+			$seller_node = node_load($row['nid']);
+			$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+
+			/* DrupalInitialize() is an extra method added to TCPDFDrupal that initializes
+			*  some TCPDF variables (like font types), and makes possible to change the
+			*  default header or footer without creating a new class.
+			*/
+			$tcpdf->DrupalInitialize(array(
+				'author' => 'Regiomino GmbH',
+				'title' => 'Rechnung von ' . $shipper_node->title,
+				'subject' => 'Rechnung über die Versandgebühren Ihres Verkaufs',
+				'keywords' => 'Regiomino, Rechnung, Versand, Einkauf, Lebensmittel',
+				'footer' => array(
+					'html' => '&nbsp;',
+				),
+				'header' => array(
+					'html' => '&nbsp;',
+				),
+			));
+
+			$new_node = new stdClass();
+			$new_node->type = 'invoice_shipping';
+			$new_node->is_new = TRUE;
+			$new_node->title = t('Invoice for shipping fee of order @number', array('@number' => $shipping_id));
+			node_object_prepare($new_node);
+			$new_node->language = 'de';
+			$new_node->uid = $seller_node->uid;
+			$new_node->field_shipping_id = array(
+				'und' => array(
+					0 => array(
+						'target_id' => $shipping_id,
+					),
+				),
+			);
+			$new_node->field_invoicing_entity = array(
+				'und' => array(
+					0 => array(
+						'target_id' => $shipper_user->field_profilereference_shipper['und'][0]['target_id'],
+					),
+				),
+			);
+			$new_node->field_total = array(
+				'und' => array(
+					0 => array(
+						'value' => $row['shipping_price'],
+					),
+				),
+			);
+			$new_node = node_submit($new_node);
+			$new_node->created = $row['created'];
+			$new_node->changed = $row['created'];
+			node_save($new_node);
+			$newnid = $new_node->nid;
+			
+			$kleinunternehmer = $shipper_node->field_kleinunternehmer[LANGUAGE_NONE][0]['value'];
+			$taxnumber = $shipper_node->field_taxnumber[LANGUAGE_NONE][0]['value'];
+			
+			$nicedate = date('d.m.Y', $row['created']);
+			$price = round($row['shipping_price'], 2);
+			$price_formatted = number_format($price, 2, ",", ".") . ' €';
+			$mwst = 19;
+			if($kleinunternehmer) $mwst = 0;
+			$amount = 1;
+			$mwst_formatted = number_format($mwst, 2, ",", ".");
+			$mwstshare = round($price * $mwst / (100 + $mwst), 2);
+			$mwsthare_formatted = number_format($mwstshare, 2, ",", ".") . ' €';
+			$pricenetto = $price - $mwstshare;
+			$pricenetto_formatted = number_format($pricenetto, 2, ",", ".") . ' €';
+			
+			$html = '				 <br />
+				 <br />
+				 <br />
+				 <br />
+				 <br />
+				 <br />
+				 <br />
+				<p style="color: rgb(189, 23, 35); font-size: x-small;">' . $shipper_node->field_company_name[LANGUAGE_NONE][0]['value'] . ' - ' . $shipper_node->field_address['und'][0]['thoroughfare'] . ' ' . $shipper_node->field_address['und'][0]['premise'] . ' - ' . $shipper_node->field_address['und'][0]['postal_code'] . ' ' . $shipper_node->field_address['und'][0]['locality'] . '</p>
+				<p>' . $row['seller_company']. '<br />' . $row['seller_street1'] . '<br />' . $row['seller_street2'] . '<br />' . $row['seller_postal_code'] . ' ' . $row['seller_city'] . '</p>
+				<table border="0">
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>Rechnungsnummer</strong></td><td width="60">' . $newnid . '</td>
+					</tr>
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>Bestellung</strong></td><td width="60">' . $shipping_id . '</td>
+					</tr>
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>Rechnungsdatum</strong></td><td width="60">' . $nicedate . '</td>
+					</tr>';
+					
+
+				if($kleinunternehmer != 1 && !empty($taxnumber)) {
+				$html .= '	
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>UStID / StNr.</strong></td><td width="60">' . $taxnumber . '</td>
+					</tr>';
+				}
+					
+				$html .= '	
+				</table>
+				<br />
+				<p style="font-size: large;"><strong>Rechnung von ' . $shipper_node->title . '</strong></p>
+				<br />
+				<br />
+				<p>Sehr geehrte Damen und Herren,<br /><br />wir bedanken uns für Ihren Lieferauftrag und erlauben uns, wiefolgt zu berechnen:</p>
+				<style>
+					tr.rechnungsposheader th {
+						border-bottom: 0.5px solid #000000;
+						font-weight: bold;
+					}
+					tr.taxes th {
+						border-top: 0.5px solid #92BF20;
+						font-weight: bold;
+					}
+					tr.lastrow td {
+						border-bottom: 0.5px solid #000000;
+					}
+					tr.summary td {
+						font-weight: bold;
+					}
+					table.taxcalc {
+						font-size: small;
+					}
+				</style>
+				<table cellpadding="4">
+					<tr class="rechnungsposheader">
+						<th>Leistung</th><th>Menge</th><th>MwSt.</th><th>Einzelpreis</th><th>Summe</th>
+					</tr>
+					<tr class="lastrow">
+						<td>Auslieferung Bestellung ' . $shipping_id . '</td>
+						<td>1</td>
+						<td>(1)</td>
+						<td>' . $price_formatted . '</td>
+						<td>' . $price_formatted . '</td>
+					</tr>
+					<tr class="summary">
+						<td colspan="3">&nbsp;</td>
+						<td>Gesamtbetrag</td>
+						<td>' . $price_formatted . '</td>
+					</tr>
+					<tr>
+						<td colspan="3">&nbsp;</td>
+						<td colspan="2"><span style="color: rgb(146, 191, 32);"><em>Gesamtbetrag wurde bereits verrechnet</em></span></td>
+					</tr>
+				 </table>
+				 <br />
+				 <br />
+				 <br />
+				 <table class="taxcalc" cellpadding="4">
+					<tr class="taxes">
+						<th>Rechnung brutto</th>
+						<th>Rechnung netto</th>
+						<th>MwSt.</th>
+						<th>Brutto</th>
+						<th>Netto</th>
+						<th>MwSt.</th>
+					</tr>
+					<tr>
+						<td>' . $price_formatted . '</td>
+						<td>' . $pricenetto_formatted . '</td>
+						<td>' . $mwst_formatted . ' (1)</td>
+						<td>' . $price_formatted . '</td>
+						<td>' . $pricenetto_formatted . '</td>
+						<td>' . $mwsthare_formatted . '</td>
+					</tr>
+				 </table>
+				 
+				 <br />
+				 <br />
+				 <br />
+				 
+				 <p style="font-size: large;"><strong>Noch Fragen?</strong></p>
+				 <p>Bitte kontaktieren Sie uns per Mail unter support@regiomino.de</p>				 
+				 ';
+
+			$tcpdf->writeHTML($html);
+
+			$tcpdf->Output("private://r_shp_tmp.pdf", "F");
+			$filepath = "private://r_shp_tmp.pdf";
+			// Create managed File object and associate with Image field.
+			$file = (object) array(
+				'uid' => 1,
+				'uri' => $filepath,
+				'filemime' => file_get_mimetype($filepath),
+				'status' => 1,
+				'display' => 1,
+			);
+			// We save the file to the root of the files directory.
+			$file = file_copy($file, "private://r_shp_$newnid.pdf");
+			$new_node->field_invoice_file[LANGUAGE_NONE][0] = (array)$file;
+			node_save($new_node);
+			
+			$update = db_update('regiomino_order_shipping')
+				->fields(
+					array(
+						'invoice' => $newnid,
+					)
+				)
+				->condition('shipping_id', $row['shipping_id'])
+				->execute();
+				
+			//Add to shippers userpoints
+			$uid = $row['uid_p'];
+			$negativeprice = (float)$price;
+			$upointparams = array(
+				'uid' => $uid,
+				'points' => $negativeprice,
+				'description' => t('Invoice @number', array('@number' => $newnid)),
+				'reference' => 'incoive_' . $newnid,
+				'display' => FALSE,
+				'tid' => 447,
+				'operation' => $shipper_node->type,
+				'entity_id' => $newnid,
+				'entity_type' => 'node',
+			);
+			$upret = userpoints_userpointsapi($upointparams);
+			$txnbalance = (float)userpoints_get_current_points($uid, 447);
+			$txn_id = $upret['transaction']['txn_id'];
+			$txn_query = db_update('{userpoints_txn}')
+				->fields(
+					array(
+						'balance' => $txnbalance,
+					)
+				)
+				->condition('txn_id', $txn_id)
+				->execute();
+				
+			//Deduct from sellers userpoints
+			$uid = $seller_node->uid;
+			$slruser = user_load($uid);
+			$slrprofile = node_load($slruser->field_profilereference['und'][0]['target_id']);
+			
+			$floatprice = (float)$price;
+			$negativeprice = 0 - $floatprice;
+			$upointparams = array(
+				'uid' => $uid,
+				'points' => $negativeprice,
+				'description' => t('Invoice @number', array('@number' => $newnid)),
+				'reference' => 'incoive_' . $newnid,
+				'display' => FALSE,
+				'tid' => 447,
+				'operation' => $slrprofile->type,
+				'entity_id' => $newnid,
+				'entity_type' => 'node',
+			);
+			$upret = userpoints_userpointsapi($upointparams);
+			$txnbalance = (float)userpoints_get_current_points($uid, 447);
+			$txn_id = $upret['transaction']['txn_id'];
+			$txn_query = db_update('{userpoints_txn}')
+				->fields(
+					array(
+						'balance' => $txnbalance,
+					)
+				)
+				->condition('txn_id', $txn_id)
+				->execute();
+				
+				
+			
+			watchdog('invoice', 'Invoices for shipping have been generated');
+		
+		}
+	}
+}
+
+function regiomino_invoice_comm($noarray) {
+	if($noarray) {
+		$commarray = array();
+		foreach($noarray as $key => $value) {
+			$result = db_select('regiomino_order', 'bo')
+				->fields('bo', array('product_count', 'product_price', 'created', 'seller_company', 'seller_street1', 'seller_street2', 'seller_city', 'seller_postal_code', 'shipping', 'order_process_id'))
+				->condition('nid', $value->nid)
+				->condition('order_status', 'canceled', '!=')
+				->condition('order_status', 'pending', '!=')
+				->condition('order_status', 'completed', '!=')
+				->condition('order_status', 'processing', '!=')
+				->execute();
+			$counter = 0;
+			while($record = $result->fetchAssoc()) {
+				$product_count = (int)$record['product_count'];
+				$product_price = (float)$record['product_price'];
+				$commarray[$value->uid]['seller']['seller_company'] = $record['seller_company'];
+				$commarray[$value->uid]['seller']['seller_street1'] = $record['seller_street1'];
+				$commarray[$value->uid]['seller']['seller_street2'] = $record['seller_street2'];
+				$commarray[$value->uid]['seller']['seller_city'] = $record['seller_city'];
+				$commarray[$value->uid]['seller']['seller_postal_code'] = $record['seller_postal_code'];
+				$commarray[$value->uid]['nodes'][$value->nid]['title'] = $value->title;
+				$commarray[$value->uid]['nodes'][$value->nid]['sales'] += $product_count * $product_price;
+				$commarray[$value->uid]['nodes'][$value->nid]['count'] += $product_count;
+				$commarray[$value->uid]['nodes'][$value->nid]['orders'][$counter]['number'] = (int)$record['shipping'];
+				$commarray[$value->uid]['nodes'][$value->nid]['orders'][$counter]['process_number'] = (int)$record['order_process_id'];
+				$commarray[$value->uid]['nodes'][$value->nid]['orders'][$counter]['created'] = (int)$record['created'];
+				$counter++;
+			}
+		}
+		
+		// Never make an instance of TCPDF or TCPDFDrupal classes manually.
+		// Use tcpdf_get_instance() instead.
+		$tcpdf_params = array(
+			'unicode' => TRUE,
+			'encoding' => 'UTF-8',
+		);
+		// TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+		$tcpdf_class = array(
+			'class' => 'TCPDFRegiomino',
+			'filetype' => 'inc',
+			'filename' => 'regiomino_invoice.class',
+			'module' => 'regiomino_invoice',
+		);
+		// regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+		$tcpdf_config = array(
+			'filetype' => 'inc',
+			'filename' => 'regiomino_invoice.config',
+			'module' => 'regiomino_invoice', 
+		);
+		
+		foreach($commarray as $key => $value) {
+		
+			$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+
+			/* DrupalInitialize() is an extra method added to TCPDFDrupal that initializes
+			*  some TCPDF variables (like font types), and makes possible to change the
+			*  default header or footer without creating a new class.
+			*/
+			$tcpdf->DrupalInitialize(array(
+				'author' => 'Regiomino GmbH',
+				'title' => 'Rechnung von Regiomino',
+				'subject' => 'Rechnung über die Gebühr Ihrer Angebote',
+				'keywords' => 'Regiomino, Rechnung, Gebühr, Einkauf, Lebensmittel',
+				'footer' => array(
+					'html' => '&nbsp;',
+				),
+				'header' => array(
+					'html' => '&nbsp;',
+				),
+			));
+		
+			$seller_user = user_load($key);
+			$seller_node = node_load($seller_user->field_profilereference['und'][0]['target_id']);
+			$sellercommission = $seller_node->field_commission['und'][0]['value'];
+		
+			$new_node = new stdClass();
+			$new_node->type = 'invoice_commission';
+			$new_node->is_new = TRUE;
+			$new_node->title = t('Invoice for commission fee of latest offers');
+			node_object_prepare($new_node);
+			$new_node->language = 'de';
+			$new_node->uid = $key;
+			foreach($value['nodes'] as $nodekey => $nodevalue) {
+				$new_node->field_offer['und'][]['target_id'] = $nodekey;
+			}
+			$new_node = node_submit($new_node);
+			node_save($new_node);
+			$newnid = $new_node->nid;
+			
+			$nicedate = date('d.m.Y', $new_node->created);
+			
+			$html = '				 <br />
+				 <br />
+				 <br />
+				 <br />
+				 <br />
+				 <br />
+				 <br />
+				<p style="color: rgb(189, 23, 35); font-size: x-small;">Regiomino GmbH - Habichtweg 6 - 91096 Möhrendorf</p>
+				<p>' . $value['seller']['seller_company'] . '<br />' . $value['seller']['seller_street1'] . '<br />' . $value['seller']['seller_street2'] . '<br />' . $value['seller']['seller_postal_code'] . ' ' . $value['seller']['seller_city'] . '</p>
+				<table border="0">
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>Rechnungsnummer</strong></td><td width="60">' . $newnid . '</td>
+					</tr>
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>Rechnungsdatum</strong></td><td width="60">' . $nicedate . '</td>
+					</tr>
+					<tr>
+						<td width="320">&nbsp;</td><td width="100"><strong>USt-ID</strong></td><td width="60">DE289663879</td>
+					</tr>
+				</table>
+				<br />
+				<p style="font-size: large;"><strong>Rechnung von Regiomino</strong></p>
+				<br />
+				<br />
+				<p>Sehr geehrte Damen und Herren,<br /><br />herzlichen Glückwunsch zu Ihren Verkäufen auf www.regiomino.de. Wir bedanken uns, dass Sie Ihre Angebote über unsere Plattform verkauft haben und erlauben uns die vereinbarte Gebühr i.H.v. netto 10% zu berechnen:</p>
+				<style>
+					tr.rechnungsposheader th {
+						border-bottom: 0.5px solid #000000;
+						font-weight: bold;
+					}
+					tr.taxes th {
+						border-top: 0.5px solid #92BF20;
+						font-weight: bold;
+					}
+					tr.lastrow td {
+						border-bottom: 0.5px solid #000000;
+					}
+					tr.summary td {
+						font-weight: bold;
+					}
+					table.taxcalc {
+						font-size: small;
+					}
+				</style>
+				<table cellpadding="4">
+					<tr class="rechnungsposheader">
+						<th>Angebot</th><th>Brutto-Umsatz</th><th>Netto-Gebühr</th><th>MwSt.</th><th>Brutto-Gebühr</th>
+					</tr>';
+				
+				$counter = 1;
+				$addup = 0;
+				foreach($value['nodes'] as $nodekey => $nodevalue) {
+					//Update offer, set newnid in field
+					$offernode = node_load($nodekey);
+					$offernode->field_included_in_invoice['und'][0]['target_id'] = $newnid;
+					node_save($offernode);
+					$grossprice = round(regiomino_offer_get_tradingunit_moneyvalue($offernode, FALSE, FALSE, 'private', $nodevalue['count'], 'field_tu_commission') * 1.19, 2);
+					$netprice = round(regiomino_offer_get_tradingunit_moneyvalue($offernode, FALSE, FALSE, 'private', $nodevalue['count'], 'field_tu_commission'), 2);
+					$addup += $grossprice;
+					if($counter == count($value['nodes'])) {
+						$html .= '<tr class="lastrow">';
+					}
+					else {
+						$html .= '<tr class="lastrow">';
+					}
+					$html .= '<td>' . $nodekey . ' (' . $nodevalue['title'] . ')';
+					
+					foreach($nodevalue['orders'] as $orderkey => $ordervalue) {
+						$html .= '<br /><font style="font-size: small;">Bestellnr. ' . $ordervalue['process_number'] . ' (' . date('d.m.Y', $ordervalue['created']) . ')</font>';
+					}
+					
+					$html .= '</td>
+						<td>' . number_format($nodevalue['sales'], '2', ',', '.') . ' €</td>
+						<td>' . number_format($netprice, '2', ',', '.') . ' €</td>
+						<td>(1)</td>
+						<td>' . number_format($grossprice, '2', ',', '.') . ' €</td>
+					</tr>';
+					$counter++;
+				}
+				$addupnetto = round($addup * 100 / 119, 2);
+				$addupvat = $addup - $addupnetto;
+					
+				$html .= '<tr class="summary">
+						<td colspan="3">&nbsp;</td>
+						<td>Gesamtbetrag</td>
+						<td>' . number_format($addup, '2', ',', '.') . ' €</td>
+					</tr>
+					<tr>
+						<td colspan="3">&nbsp;</td>
+						<td colspan="2"><span style="color: rgb(146, 191, 32);"><em>Gesamtbetrag wurde bereits verrechnet</em></span></td>
+					</tr>
+				 </table>
+				 <br />
+				 <br />
+				 <br />
+				 <table class="taxcalc" cellpadding="4">
+					<tr class="taxes">
+						<th>Rechnung brutto</th>
+						<th>Rechnung netto</th>
+						<th>MwSt.</th>
+						<th>Brutto</th>
+						<th>Netto</th>
+						<th>MwSt.</th>
+					</tr>
+					<tr>
+						<td>' . number_format($addup, '2', ',', '.') . ' €</td>
+						<td>' . number_format($addupnetto, '2', ',', '.') . ' €</td>
+						<td>19,00 % (1)</td>
+						<td>' . number_format($addup, '2', ',', '.') . ' €</td>
+						<td>' . number_format($addupnetto, '2', ',', '.') . ' €</td>
+						<td>' . number_format($addupvat, '2', ',', '.') . ' €</td>
+					</tr>
+				 </table>
+				 
+				 <br />
+				 <br />
+				 <br />
+				 
+				 <p style="font-size: large;"><strong>Haben Sie Fragen?</strong></p>
+				 <p>Bitte kontaktieren Sie uns per Mail unter support@regiomino.de</p>				 
+				 ';
+
+			$tcpdf->writeHTML($html);
+
+			$tcpdf->Output("private://r_comm_tmp.pdf", "F");
+			$filepath = "private://r_comm_tmp.pdf";
+			// Create managed File object and associate with Image field.
+			$file = (object) array(
+				'uid' => 1,
+				'uri' => $filepath,
+				'filemime' => file_get_mimetype($filepath),
+				'status' => 1,
+				'display' => 1,
+			);
+			// We save the file to the root of the files directory.
+			$file = file_copy($file, "private://r_comm_$newnid.pdf");
+			$new_node->field_invoice_file[LANGUAGE_NONE][0] = (array)$file;
+			
+			$new_node->field_total['und'][0]['value'] = $addup;
+			
+			node_save($new_node);
+			
+			//Write to userpoints
+			$uid = $key;
+			$negativeprice = 0 - $addup;
+			$upointparams = array(
+				'uid' => $uid,
+				'points' => $negativeprice,
+				'description' => t('Invoice @number', array('@number' => $newnid)),
+				'reference' => 'incoive_' . $newnid,
+				'display' => FALSE,
+				'tid' => 447,
+				'operation' => $seller_node->type,
+				'entity_id' => $newnid,
+				'entity_type' => 'node',
+			);
+			$upret = userpoints_userpointsapi($upointparams);
+			$txnbalance = (float)userpoints_get_current_points($uid, 447);
+			$txn_id = $upret['transaction']['txn_id'];
+			$txn_query = db_update('{userpoints_txn}')
+				->fields(
+					array(
+						'balance' => $txnbalance,
+					)
+				)
+				->condition('txn_id', $txn_id)
+				->execute();
+
+		}
+		watchdog('invoice', 'Invoices for commission fees have been generated');
+	}
+}
+
+function regiomino_invoice_txn() {
+  // Never make an instance of TCPDF or TCPDFDrupal classes manually.
+  // Use tcpdf_get_instance() instead.
+	$tcpdf_params = array(
+    'unicode' => TRUE,
+    'encoding' => 'UTF-8',
+  );
+  // TCPDF class will be TCPDFRegiomino from regiomino_invoice/regiomino_invoice.class.inc.
+  $tcpdf_class = array(
+    'class' => 'TCPDFRegiomino',
+    'filetype' => 'inc',
+    'filename' => 'regiomino_invoice.class',
+    'module' => 'regiomino_invoice',
+  );
+  // regiomino_invoice/regiomino_invoice.config.inc will be used as the config file.
+  $tcpdf_config = array(
+    'filetype' => 'inc',
+    'filename' => 'regiomino_invoice.config',
+    'module' => 'regiomino_invoice', 
+  );
+	
+
+	$query = db_select('regiomino_order_payment', 'p');
+	$query->join('regiomino_order', 'o', 'p.payment_id = o.order_process_id');
+	$query->groupBy('p.payment_id');
+	$query->fields('p', array('payment_id', 'transaction_fee'));
+	$query->fields('o', array('created', 'billing_first_name', 'billing_last_name', 'billing_street1', 'billing_street2', 'billing_city', 'billing_postal_code', 'uid'));
+	$query->condition('p.invoice', NULL);
+	$query->condition('o.order_status', 'pending', '!=');
+	$query->condition('o.order_status', 'canceled', '!=');
+	$query->range(0,10);
+	$result = $query->execute();
+	$numrows = $result->rowCount();
+
+ 	if($numrows > 0) {
+		while($row = $result->fetchAssoc()) {
+		
+			if($row['transaction_fee'] > 0) {
+			
+				$tcpdf = tcpdf_get_instance($tcpdf_params, $tcpdf_class, $tcpdf_config);
+
+				/* DrupalInitialize() is an extra method added to TCPDFDrupal that initializes
+				*  some TCPDF variables (like font types), and makes possible to change the
+				*  default header or footer without creating a new class.
+				*/
+				$tcpdf->DrupalInitialize(array(
+					'author' => 'Regiomino GmbH',
+					'title' => 'Rechnung von Regiomino',
+					'subject' => 'Rechnung über die Transaktionsgebühr Ihres Einkaufs',
+					'keywords' => 'Regiomino, Rechnung, Transaktionsgebühr, Einkauf, Lebensmittel',
+					'footer' => array(
+						'html' => '&nbsp;',
+					),
+					'header' => array(
+						'html' => '&nbsp;',
+					),
+				));
+				
+				$order_process = $row['payment_id']; //Make this the actual order_process_id
+				$created_date = $row['created']; //Make this the date of the order
+
+				$new_node = new stdClass();
+				$new_node->type = 'invoice_txnfee';
+				$new_node->is_new = TRUE;
+				$new_node->title = t('Invoice for transaction fee of order process @number', array('@number' => $order_process));
+				node_object_prepare($new_node);
+				$new_node->language = 'de';
+				$new_node->uid = $row['uid'];
+				$new_node->field_order_process = array(
+					'und' => array(
+						0 => array(
+							'target_id' => $order_process,
+						),
+					),
+				);
+				$new_node = node_submit($new_node);
+				$new_node->created = $row['created'];
+				$new_node->changed = $row['created'];
+				node_save($new_node);
+				$newnid = $new_node->nid;
+				
+				$nicedate = date('d.m.Y', $row['created']);
+				$price = round($row['transaction_fee'], 2);
+				$price_formatted = number_format($price, 2, ",", ".") . ' €';
+				$mwst = 19;
+				$amount = 1;
+				$mwst_formatted = number_format($mwst, 2, ",", ".");
+				$mwstshare = round($price * $mwst / (100 + $mwst), 2);
+				$mwsthare_formatted = number_format($mwstshare, 2, ",", ".") . ' €';
+				$pricenetto = $price - $mwstshare;
+				$pricenetto_formatted = number_format($pricenetto, 2, ",", ".") . ' €';
+				
+				$html = '				 <br />
+					 <br />
+					 <br />
+					 <br />
+					 <br />
+					 <br />
+					 <br />
+					<p style="color: rgb(189, 23, 35); font-size: x-small;">Regiomino GmbH - Habichtweg 6 - 91096 Möhrendorf</p>
+					<p>' . $row['billing_first_name'] . ' ' . $row['billing_last_name']. '<br />' . $row['billing_street1'] . '<br />' . $row['billing_street2'] . '<br />' . $row['billing_postal_code'] . ' ' . $row['billing_city'] . '</p>
+					<table border="0">
+						<tr>
+							<td width="320">&nbsp;</td><td width="100"><strong>Rechnungsnummer</strong></td><td width="60">' . $newnid . '</td>
+						</tr>
+						<tr>
+							<td width="320">&nbsp;</td><td width="100"><strong>Bestellvorgang</strong></td><td width="60">' . $order_process . '</td>
+						</tr>
+						<tr>
+							<td width="320">&nbsp;</td><td width="100"><strong>Rechnungsdatum</strong></td><td width="60">' . $nicedate . '</td>
+						</tr>
+						<tr>
+							<td width="320">&nbsp;</td><td width="100"><strong>USt-ID</strong></td><td width="60">DE289663879</td>
+						</tr>
+					</table>
+					<br />
+					<p style="font-size: large;"><strong>Rechnung von Regiomino</strong></p>
+					<br />
+					<br />
+					<p>Sehr geehrte Damen und Herren,<br /><br />wir bedanken uns für Ihre Bestellung und erlauben uns, wiefolgt zu berechnen:</p>
+					<style>
+						tr.rechnungsposheader th {
+							border-bottom: 0.5px solid #000000;
+							font-weight: bold;
+						}
+						tr.taxes th {
+							border-top: 0.5px solid #92BF20;
+							font-weight: bold;
+						}
+						tr.lastrow td {
+							border-bottom: 0.5px solid #000000;
+						}
+						tr.summary td {
+							font-weight: bold;
+						}
+						table.taxcalc {
+							font-size: small;
+						}
+					</style>
+					<table cellpadding="4">
+						<tr class="rechnungsposheader">
+							<th>Artikel</th><th>Menge</th><th>MwSt.</th><th>Einzelpreis</th><th>Summe</th>
+						</tr>
+						<tr class="lastrow">
+							<td>Transaktionsgebühr</td>
+							<td>1</td>
+							<td>(1)</td>
+							<td>' . $price_formatted . '</td>
+							<td>' . $price_formatted . '</td>
+						</tr>
+						<tr class="summary">
+							<td colspan="3">&nbsp;</td>
+							<td>Gesamtbetrag</td>
+							<td>' . $price_formatted . '</td>
+						</tr>
+						<tr>
+							<td colspan="3">&nbsp;</td>
+							<td colspan="2"><span style="color: rgb(146, 191, 32);"><em>Gesamtbetrag bereits bezahlt</em></span></td>
+						</tr>
+					 </table>
+					 <br />
+					 <br />
+					 <br />
+					 <table class="taxcalc" cellpadding="4">
+						<tr class="taxes">
+							<th>Rechnung brutto</th>
+							<th>Rechnung netto</th>
+							<th>MwSt.</th>
+							<th>Brutto</th>
+							<th>Netto</th>
+							<th>MwSt.</th>
+						</tr>
+						<tr>
+							<td>' . $price_formatted . '</td>
+							<td>' . $pricenetto_formatted . '</td>
+							<td>' . $mwst_formatted . ' (1)</td>
+							<td>' . $price_formatted . '</td>
+							<td>' . $pricenetto_formatted . '</td>
+							<td>' . $mwsthare_formatted . '</td>
+						</tr>
+					 </table>
+					 
+					 <br />
+					 <br />
+					 <br />
+					 
+					 <p style="font-size: large;"><strong>Noch Fragen?</strong></p>
+					 <p>Bitte kontaktieren Sie uns per Mail unter support@regiomino.de</p>				 
+					 ';
+
+				$tcpdf->writeHTML($html);
+
+				$tcpdf->Output("private://r_txn_tmp.pdf", "F");
+				$filepath = "private://r_txn_tmp.pdf";
+				// Create managed File object and associate with Image field.
+				$file = (object) array(
+					'uid' => 1,
+					'uri' => $filepath,
+					'filemime' => file_get_mimetype($filepath),
+					'status' => 1,
+					'display' => 1,
+				);
+				// We save the file to the root of the files directory.
+				$file = file_copy($file, "private://r_txn_$newnid.pdf");
+				$new_node->field_invoice_file[LANGUAGE_NONE][0] = (array)$file;
+				$new_node->field_total['und'][0]['value'] = $price;
+				node_save($new_node);
+				
+				$update = db_update('regiomino_order_payment')
+					->fields(
+						array(
+							'invoice' => $newnid,
+						)
+					)
+					->condition('payment_id', $row['payment_id'])
+					->execute();
+			}
+			else {
+				$update = db_update('regiomino_order_payment')
+					->fields(
+						array(
+							'invoice' => 0,
+						)
+					)
+					->condition('payment_id', $row['payment_id'])
+					->execute();
+			}
+			watchdog('invoice', 'Invoices for transaction fees have been generated');
+		}
+	}
+}
