@@ -2396,7 +2396,13 @@ function regiomino_shipping_get_latestorder($avlbpickupdates, $delay, $duration,
 	$consolidated = array();
 	
 	$deliveryoptions = array_keys($avlbpickupdates);
-	if($_SESSION['geolocation_data']['type'] == $type && !in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptions)) {
+	if(isset($_SESSION['geolocation_data']['type'])) {
+		$comparetype = $_SESSION['geolocation_data']['type'];
+	}
+	else {
+		$comparetype = 'bringlivery';
+	}
+	if($comparetype == $type && !in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptions)) {
 	}
 	else {
 		foreach($avlbpickupdates as $key=>$value) {

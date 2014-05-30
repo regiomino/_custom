@@ -1065,6 +1065,7 @@ function regiomino_offer_most_sales_effective_products($timerange = 2419200, $pi
 	else {
 		cache_clear_all('highlights_de_' . $pickerfci . '_' . $timerange . '_' . $forcefillup . '_' . $limit . '_' . $offset, 'cache', TRUE);
 
+			$orders = array();
 		//Alle Lieferaufträge raussuchen, die später als die definierte Zeit ausgeführt wurden
 		$query = new EntityFieldQuery;
 		$shippingqry = $query
@@ -1073,16 +1074,18 @@ function regiomino_offer_most_sales_effective_products($timerange = 2419200, $pi
 			->propertyCondition('pickup_range_from', $earliest, '>')
 			->execute();
 		$shipping_ids = array();
-		if(isset($shippingqry['regiomino_order_shipping'])) $shipping_ids = array_keys($shippingqry['regiomino_order_shipping']);
+		if(isset($shippingqry['regiomino_order_shipping'])) {
+		
+			$shipping_ids = array_keys($shippingqry['regiomino_order_shipping']);
 
-		//Alle zu den Lieferaufträgen zugehörigern Bestellungen raussuchen
-		$query = new EntityFieldQuery;
-		$orderqry = $query
-			->entityCondition('entity_type', 'regiomino_order')
-			->propertyCondition('shipping', $shipping_ids)
-			->execute();
-		$orders = array();
-		if(isset($orderqry['regiomino_order'])) $orders = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+			//Alle zu den Lieferaufträgen zugehörigern Bestellungen raussuchen
+			$query = new EntityFieldQuery;
+			$orderqry = $query
+				->entityCondition('entity_type', 'regiomino_order')
+				->propertyCondition('shipping', $shipping_ids)
+				->execute();
+			if(isset($orderqry['regiomino_order'])) $orders = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+		}
 		
 		//Ein Array füllen, dass für jede NID den Umsatz aufsummiert
 		$mostpopular = array();
