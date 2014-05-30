@@ -1858,6 +1858,7 @@ function regiomino_shipping_get_regional_pickupoptions($fci, $amounttoshow = 1) 
 	$storageprofile = $storageprofiles[$storageprofilenids[0]];
 	$deliverydates = array();
 	$today = strtotime(date('d.m.Y'));
+	$counter = 0;
 	foreach($fcitem->field_delivery_dates[LANGUAGE_NONE] as $date) {
 		
 		$deliveryday = strtotime(date('d.m.Y', strtotime($date['value'])+$addtime));

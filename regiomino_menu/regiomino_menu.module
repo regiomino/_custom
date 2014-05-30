@@ -95,12 +95,22 @@ function regiomino_menu_block_view($delta = '') {
 						$time = time();
 						$variablecacheexpire = variable_get('regiomino_menu_cache_expire', 1);
 						$cacheexpire = $time - $variablecacheexpire;
-						$cached = cache_get('productsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $value->tid);
+						if(isset($_SESSION['geolocation_data']['deliveryoption'])) {
+							$cached = cache_get('productsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $value->tid);
+						}
+						else {
+							$cached = cache_get('productsincategory_de_0000_' . $value->tid);
+						}
 						if($cached && $cached->created > $cacheexpire) {
 							$productsincategory = $cached->data;
 						}
 						else {
-							cache_clear_all('productsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $value->tid, 'cache', TRUE);
+							if(isset($_SESSION['geolocation_data']['deliveryoption'])) {
+								cache_clear_all('productsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $value->tid, 'cache', TRUE);
+							}
+							else {
+								cache_clear_all('productsincategory_de_0000_' . $value->tid, 'cache', TRUE);
+							}
 							
 							//Erzeuge $productsincategory
 							//Count the amount of contained offers
@@ -113,13 +123,24 @@ function regiomino_menu_block_view($delta = '') {
 								->execute();
 							$deliverydates = array();
 							foreach($productsincategory['node'] as $picnid=>$picvalue) {
-								$deliverydates = regiomino_shipping_get_available_pickupdates($picnid, $_SESSION['geolocation_data']['type']);
+								if(isset($_SESSION['geolocation_data']['type'])) {
+									$geolocation_data_type = $_SESSION['geolocation_data']['type'];
+								}
+								else {
+									$geolocation_data_type = 'bringlivery';
+								}
+								$deliverydates = regiomino_shipping_get_available_pickupdates($picnid, $geolocation_data_type);
 								if(!isset($deliverydates) || empty($deliverydates)) {
 									unset($productsincategory['node'][$picnid]);
 								}
 							}
 							
-							cache_set('productsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $value->tid, $productsincategory);
+							if(isset($_SESSION['geolocation_data']['deliveryoption'])) {
+								cache_set('productsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $value->tid, $productsincategory);
+							}
+							else {
+								cache_set('productsincategory_de_0000_' . $value->tid, $productsincategory);
+							}
 						}
 						$numRows = 0;
 						
@@ -143,13 +164,22 @@ function regiomino_menu_block_view($delta = '') {
 								//Iterate through all children items to build li elements
 								foreach($children as $ckey => $cvalue) {
 									
-									$cached = cache_get('cproductsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $cvalue->tid);
+									if(isset($_SESSION['geolocation_data']['deliveryoption'])) {
+										$cached = cache_get('cproductsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $cvalue->tid);
+									}
+									else {
+										$cached = cache_get('cproductsincategory_de_1111_' . $cvalue->tid);
+									}
 									if($cached && $cached->created > $cacheexpire) {
 										$cproductsincategory = $cached->data;
 									}
 									else {
-										cache_clear_all('cproductsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $cvalue->tid, 'cache', TRUE);
-										
+										if(isset($_SESSION['geolocation_data']['deliveryoption'])) {
+											cache_clear_all('cproductsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $cvalue->tid, 'cache', TRUE);
+										}
+										else {
+											cache_clear_all('cproductsincategory_de_1111_' . $cvalue->tid, 'cache', TRUE);
+										}
 										//Check if current child item actually contains published and non-soldout offers
 										$query = new EntityFieldQuery;
 										$cproductsincategory = $query
@@ -159,14 +189,26 @@ function regiomino_menu_block_view($delta = '') {
 											->fieldCondition('field_category', 'tid', $cvalue->tid)
 											->execute();
 										$deliverydates = array();
-										foreach($cproductsincategory['node'] as $cpicnid=>$cpicvalue) {
-											$deliverydates = regiomino_shipping_get_available_pickupdates($cpicnid, $_SESSION['geolocation_data']['type']);
-											if(!isset($deliverydates) || empty($deliverydates)) {
-												unset($cproductsincategory['node'][$cpicnid]);
+										if(isset($cproductsincategory['node'])) {
+											foreach($cproductsincategory['node'] as $cpicnid=>$cpicvalue) {
+												if(isset($_SESSION['geolocation_data']['type']) && !empty($_SESSION['geolocation_data']['type'])) {
+													$geolocation_data_type2 = $_SESSION['geolocation_data']['type'];
+												}
+												else {
+													$geolocation_data_type2 = 'bringlivery';
+												}
+												$deliverydates = regiomino_shipping_get_available_pickupdates($cpicnid, $geolocation_data_type2);
+												if(!isset($deliverydates) || empty($deliverydates)) {
+													unset($cproductsincategory['node'][$cpicnid]);
+												}
 											}
 										}
-										
-										cache_set('cproductsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $cvalue->tid, $cproductsincategory);
+										if(isset($_SESSION['geolocation_data']['deliveryoption'])) {
+											cache_set('cproductsincategory_de_' . $_SESSION['geolocation_data']['deliveryoption'] . '_' . $cvalue->tid, $cproductsincategory);
+										}
+										else {
+											cache_set('cproductsincategory_de_1111_' . $cvalue->tid, $cproductsincategory);
+										}
 									}
 									
 									//Count the amount of contained offers

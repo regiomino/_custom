@@ -396,17 +396,27 @@ function regiomino_offer_get_duration($nodeobject, $formatted=FALSE) {
 }
 
 function regiomino_offer_sort_tradingunits($a, $b) {
-	if ($a->field_tu_size[LANGUAGE_NONE][0]['value'] == $b->field_tu_size[LANGUAGE_NONE][0]['value']) {
-			return 0;
+	if(isset($a->field_tu_size[LANGUAGE_NONE][0]['value'])) {
+		if ($a->field_tu_size[LANGUAGE_NONE][0]['value'] == $b->field_tu_size[LANGUAGE_NONE][0]['value']) {
+				return 0;
+		}
+		return ($a->field_tu_size[LANGUAGE_NONE][0]['value'] < $b->field_tu_size[LANGUAGE_NONE][0]['value']) ? -1 : 1;
 	}
-	return ($a->field_tu_size[LANGUAGE_NONE][0]['value'] < $b->field_tu_size[LANGUAGE_NONE][0]['value']) ? -1 : 1;
+	else {
+		return 0;
+	}
 }
 
 function regiomino_offer_sort_tradingunits_desc($a, $b) {
-	if ($a->field_tu_size[LANGUAGE_NONE][0]['value'] == $b->field_tu_size[LANGUAGE_NONE][0]['value']) {
-			return 0;
+	if(isset($a->field_tu_size[LANGUAGE_NONE][0]['value'])) {
+		if ($a->field_tu_size[LANGUAGE_NONE][0]['value'] == $b->field_tu_size[LANGUAGE_NONE][0]['value']) {
+				return 0;
+		}
+		return ($a->field_tu_size[LANGUAGE_NONE][0]['value'] > $b->field_tu_size[LANGUAGE_NONE][0]['value']) ? -1 : 1;
 	}
-	return ($a->field_tu_size[LANGUAGE_NONE][0]['value'] > $b->field_tu_size[LANGUAGE_NONE][0]['value']) ? -1 : 1;
+	else {
+		return 0;
+	}
 }
 
 function regiomino_offer_get_originalprice($nodeinfo, $formatted=FALSE, $notaltered=FALSE) {
@@ -492,12 +502,20 @@ function regiomino_offer_get_tradingunit_moneyvalue($nodeinfo, $formatted=FALSE,
 	if(!isset($returnval[$nodeinfo->nid][$formatted][$withcart][$tax][$amount][$field])) {
 
 		$tuvalue = NULL;
+		$fcloadarray = array();
+		if(isset($nodeinfo->field_tradingunits[LANGUAGE_NONE])) {
+			foreach($nodeinfo->field_tradingunits[LANGUAGE_NONE] as $key => $value) {
+				$fcloadarray[] = $value['value'];
+			}
+		}
 		//Load all tradingunits stored in the node
-		$fcis = entity_load('field_collection_item', array_values($nodeinfo->field_tradingunits[LANGUAGE_NONE]));
+		$fcis = entity_load('field_collection_item', array_values($fcloadarray));
 		
 		//Filter out prices that do not belong to the customertype (private or commercial)
-		foreach($fcis as $key=>$value) {
-			if($value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != $tax) unset($fcis[$key]);
+		if(isset($fcis) && !empty($fcis)) {
+			foreach($fcis as $key=>$value) {
+				if(isset($value->field_tu_customertype[LANGUAGE_NONE][0]['value']) && $value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != $tax) unset($fcis[$key]);
+			}
 		}
 		//If prices are left, continue here. Otherwise NULL is returned
 		if(isset($fcis) && !empty($fcis)) {
@@ -506,7 +524,7 @@ function regiomino_offer_get_tradingunit_moneyvalue($nodeinfo, $formatted=FALSE,
 			usort($fcis, "regiomino_offer_sort_tradingunits_desc");
 			//Find out which tradingunit size matches the given amount (mod = 0)
 			foreach($fcis as $key=>$value) {
-				if($amount % $value->field_tu_size[LANGUAGE_NONE][0]['value']) {
+				if(!isset($value->field_tu_size[LANGUAGE_NONE][0]['value']) || $amount % $value->field_tu_size[LANGUAGE_NONE][0]['value']) {
 					//tradingunit doesn't fit
 				}
 				else {
@@ -1009,8 +1027,13 @@ function regiomino_offer_add_to_index($nodeobject) {
 function regiomino_offer_most_sales_effective_products($timerange = 2419200, $pickerfci = NULL, $offset = 0, $limit = 0, $cachingtime = 3600, $forcefillup = 0, $state = array(1)) {
 	//Wenn kein spezieller Abholer übergeben wurde, wird der aus der aktuellen Session übernommen
 	if(empty($pickerfci)) {
-		$tmp = explode('-', $_SESSION['geolocation_data']['deliveryoption']);
-		$pickerfci = $tmp[7];
+		if(isset($_SESSION['geolocation_data']['deliveryoption'])) {
+			$tmp = explode('-', $_SESSION['geolocation_data']['deliveryoption']);
+			$pickerfci = $tmp[7];
+		}
+		else {
+			$pickerfci = 19;
+		}
 	}
 	//Zeit definieren, ab der gesucht werden soll
 	$time = time();

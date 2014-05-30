@@ -408,18 +408,24 @@ function regiomino_geolocation_block_view($delta = '') {
 				$loadedcart = regiomino_cart_load_cart();
 				$cartfilled = FALSE;
 				if(!empty($loadedcart)) $cartfilled = TRUE;
-				$deliveryoption = explode('-', $_SESSION['geolocation_data']['deliveryoption']);
-				$block['content'] = theme('regiomino_geolocation_theme_display', array(
-															'vars' => array(
-																'geoloc_zip' => $_SESSION['geolocation_data']['zipcode'],
-																'geoloc_loc' => $_SESSION['geolocation_data']['locality'],
-																'geoloc_type' => $_SESSION['geolocation_data']['type'],
-																'geoloc_option' => $_SESSION['geolocation_data']['deliveryoption'],
-																'timewindow' => date('d.m.Y H:i', $deliveryoption[1]) . '-' . date('H:i', $deliveryoption[2]),
-																'resetpath' => url(current_path(), array('query' => array('resetloc' => '1'))),
-																'cartfilled' => $cartfilled,
-															),
-														));
+				
+					$templatearray = array(
+						'vars' => array(
+							'resetpath' => url(current_path(), array('query' => array('resetloc' => '1'))),
+							'cartfilled' => $cartfilled,
+						),
+					);
+					
+					if(isset($_SESSION['geolocation_data']) && ! empty($_SESSION['geolocation_data'])) {
+						$deliveryoption = explode('-', $_SESSION['geolocation_data']['deliveryoption']);
+						$templatearray['vars']['geoloc_zip'] = $_SESSION['geolocation_data']['zipcode'];
+						$templatearray['vars']['geoloc_loc'] = $_SESSION['geolocation_data']['locality'];
+						$templatearray['vars']['geoloc_type'] = $_SESSION['geolocation_data']['type'];
+						$templatearray['vars']['geoloc_option'] = $_SESSION['geolocation_data']['deliveryoption'];
+						$templatearray['vars']['timewindow'] = date('d.m.Y H:i', $deliveryoption[1]) . '-' . date('H:i', $deliveryoption[2]);
+					}
+					
+					$block['content'] = theme('regiomino_geolocation_theme_display', $templatearray);
 				
 			}
 			return $block;  
