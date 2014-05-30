@@ -636,8 +636,7 @@ function regiomino_order_payment_form($form, &$form_state) {
 	foreach($payment_types as $key=>$value) {
 		$payment[$value->field_paymentkey[LANGUAGE_NONE][0]['value']] = $value->title;
 	}
-	
-	if(!$payment[$paymentitems[0]['value']]) {
+	if(empty($paymentitems[0]['value'])) {
 		$paymentstring = t('Balance');
 	}
 	else {

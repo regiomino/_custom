@@ -424,7 +424,7 @@ function regiomino_admin_manage_offers_getformfields() {
 	$form['regiomino_offer_create']['productinfo']['title'] = array(
 		'#type' => 'textfield',
 		'#required' => TRUE,
-		'#attributes' => array('placeholder' => 'Titel, z.B. "Bamberger Hörnla, 3kg"'),
+		'#attributes' => array('placeholder' => 'Titel, z.B. "Bamberger Hörnla, 3kg" (ca. 30 Zeichen)'),
 		'#title' => 'Titel',
 		'#title_display' => 'invisible',
 	);

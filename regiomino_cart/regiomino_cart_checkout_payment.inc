@@ -141,7 +141,7 @@ function regiomino_cart_paymentinfo_form($form, &$form_state) {
 		</table></div>
 		<!--<p>Nach dieser Bestellung verbleibt Ihnen ein Guthaben von ' . number_format($leftoverbalance, 2, ",", ".") . ' &euro;</p>-->
 	'; */
-			
+	$form['notice']['#markup'] = '';
 	if($topay) {
 		$form['notice']['#markup'] .= '<div class="paymentinfo"><p>' . t('Please decide how you would like to pay for your order. Afterwards, please click "@continue". On the next page you can still check everything before placing your order.', array('@continue' => t('Continue'))) . '</p></div>';
 		
@@ -218,15 +218,17 @@ function regiomino_cart_paymentinfo_form($form, &$form_state) {
 
 function regiomino_cart_paymentinfo_form_validate($form, &$form_state) {
 	//Validate that billing address fields are actually filled in, when different address is requested
-	if($form_state['values']['payment'] == 'debit') {
-		if(empty($form_state['values']['bankaccountholder'])) {
-			form_set_error('bankaccountholder', t('The field %field is required.', array('%field' => $form['bof_checkout']['directdebit']['bankaccountholder']['#title'])));
-		}
-		if(empty($form_state['values']['bankaccount'])) {
-			form_set_error('bankaccount', t('The field %field is required.', array('%field' => $form['bof_checkout']['directdebit']['bankaccount']['#title'])));
-		}
-		if(empty($form_state['values']['bankcode'])) {
-			form_set_error('bankcode', t('The field %field is required.', array('%field' => $form['bof_checkout']['directdebit']['bankcode']['#title'])));
+	if(isset($form_state['values']['payment'])) {
+		if($form_state['values']['payment'] == 'debit') {
+			if(empty($form_state['values']['bankaccountholder'])) {
+				form_set_error('bankaccountholder', t('The field %field is required.', array('%field' => $form['bof_checkout']['directdebit']['bankaccountholder']['#title'])));
+			}
+			if(empty($form_state['values']['bankaccount'])) {
+				form_set_error('bankaccount', t('The field %field is required.', array('%field' => $form['bof_checkout']['directdebit']['bankaccount']['#title'])));
+			}
+			if(empty($form_state['values']['bankcode'])) {
+				form_set_error('bankcode', t('The field %field is required.', array('%field' => $form['bof_checkout']['directdebit']['bankcode']['#title'])));
+			}
 		}
 	}
 }
@@ -235,18 +237,19 @@ function regiomino_cart_paymentinfo_form_submit($form, &$form_state) {
 	//Retrieve payment options and make them selectable through form item
 	global $user;
 	$userobject = user_load($user->uid);
-	$userobject->field_use_balance_for_purchase['und'][0]['value'] = $form_state['values']['paywithbalance'];
-	if($form_state['values']['paywithbalance'] == '1') {
-		$userobject->field_payment['und'][0]['value'] = $form_state['values']['paymentbalance'];
+	if(isset($form_state['values']['paywithbalance'])) {
+		$userobject->field_use_balance_for_purchase['und'][0]['value'] = $form_state['values']['paywithbalance'];
+		if($form_state['values']['paywithbalance'] == '1') {
+			$userobject->field_payment['und'][0]['value'] = $form_state['values']['paymentbalance'];
+		}
+		else {
+			$userobject->field_payment['und'][0]['value'] = $form_state['values']['payment'];
+		}
+		$userobject->field_bankaccountholder[LANGUAGE_NONE][0]['value'] = $form_state['values']['bankaccountholder'];
+		$userobject->field_bankaccount[LANGUAGE_NONE][0]['value'] = $form_state['values']['bankaccount'];
+		$userobject->field_bankcode[LANGUAGE_NONE][0]['value'] = $form_state['values']['bankcode'];
+		
+		user_save($userobject);
 	}
-	else {
-		$userobject->field_payment['und'][0]['value'] = $form_state['values']['payment'];
-	}
-	$userobject->field_bankaccountholder[LANGUAGE_NONE][0]['value'] = $form_state['values']['bankaccountholder'];
-	$userobject->field_bankaccount[LANGUAGE_NONE][0]['value'] = $form_state['values']['bankaccount'];
-	$userobject->field_bankcode[LANGUAGE_NONE][0]['value'] = $form_state['values']['bankcode'];
-	
-	user_save($userobject);
-
 	drupal_goto('checkout/verify');
 }

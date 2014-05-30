@@ -2074,19 +2074,20 @@ function regiomino_shipping_get_available_pickupdates($product, $type = NULL, $c
 	$tmp = $query->execute();
 
 	$shipperprofileid = array();
-	foreach($tmp['field_collection_item'] as $fckey => $fcinfo) {
-		$query = new EntityFieldQuery;
-		$tmp2 = $query
-			->entityCondition('entity_type', 'node')
-			->entityCondition('bundle', $profiletype)
-			->propertyCondition('status', 1)
-			->fieldCondition($fct, 'value', $fckey)
-			->execute();
-		foreach($tmp2['node'] as $nkey=>$nval) {
-			$shipperprofileid[$fckey] = $nkey;
+	if(isset($tmp['field_collection_item'])) {
+		foreach($tmp['field_collection_item'] as $fckey => $fcinfo) {
+			$query = new EntityFieldQuery;
+			$tmp2 = $query
+				->entityCondition('entity_type', 'node')
+				->entityCondition('bundle', $profiletype)
+				->propertyCondition('status', 1)
+				->fieldCondition($fct, 'value', $fckey)
+				->execute();
+			foreach($tmp2['node'] as $nkey=>$nval) {
+				$shipperprofileid[$fckey] = $nkey;
+			}
 		}
 	}
-
 	//$shipperprofileid now contains all shippers that have matching regions and offer a possibly valid time
 	//now retrieve that time and offer it to the customer as a selection
 	
@@ -2153,18 +2154,19 @@ function regiomino_shipping_get_available_pickupdates($product, $type = NULL, $c
 						->execute();
 
 					$shipperprofileid_int = array();
-					foreach($tmp_int['field_collection_item'] as $fckey_int => $fcinfo_int) {
-						$query_int = new EntityFieldQuery;
-						$tmp_int2 = $query_int
-							->entityCondition('entity_type', 'node')
-							->entityCondition('bundle', 'shipper_profile')
-							->fieldCondition('field_delivery_options', 'value', $fckey_int)
-							->execute();
-						foreach($tmp_int2['node'] as $nkey_int=>$nval_int) {
-							$shipperprofileid_int[$fckey_int] = $nkey_int;
+					if(isset($tmp_int['field_collection_item'])) {
+						foreach($tmp_int['field_collection_item'] as $fckey_int => $fcinfo_int) {
+							$query_int = new EntityFieldQuery;
+							$tmp_int2 = $query_int
+								->entityCondition('entity_type', 'node')
+								->entityCondition('bundle', 'shipper_profile')
+								->fieldCondition('field_delivery_options', 'value', $fckey_int)
+								->execute();
+							foreach($tmp_int2['node'] as $nkey_int=>$nval_int) {
+								$shipperprofileid_int[$fckey_int] = $nkey_int;
+							}
 						}
 					}
-					
 					//$shipperprofileid_int now contains all shippers that have matching regions and offer a possibly valid time
 					//now retrieve that time and offer it to the customer as a selection
 					
@@ -2201,7 +2203,7 @@ function regiomino_shipping_get_available_pickupdates($product, $type = NULL, $c
 			//Rename product array and load the userobject of the author(seller)
 			foreach($productbackup as $pukey => $puvalue) {
 				$productobject = node_load($puvalue['nid']);
-				$degrees = $productobject->field_expiry[LANGUAGE_NONE][0]['second'];
+				if(isset($productobject->field_expiry[LANGUAGE_NONE][0]['second'])) $degrees = $productobject->field_expiry[LANGUAGE_NONE][0]['second'];
 				if(isset($degrees)) {
 					if(isset($expiries[$degrees])) {
 						$expiries[$degrees] += $puvalue['shipping_weight'] * $puvalue['menge'] / 1000;
@@ -2215,7 +2217,7 @@ function regiomino_shipping_get_available_pickupdates($product, $type = NULL, $c
 		else {
 			$productobject = node_load($productbackup);
 			if(isset($productobject->field_expiry[LANGUAGE_NONE][0]['second'])) $degrees = $productobject->field_expiry[LANGUAGE_NONE][0]['second'];
-			if(isset($degrees)) $expiries[$degrees] = $productobject->field_shippingweight[LANGUAGE_NONE][0]['value'] * 1 / 1000;
+			if(isset($degrees) && isset($productobject->field_shippingweight[LANGUAGE_NONE][0]['value'])) $expiries[$degrees] = $productobject->field_shippingweight[LANGUAGE_NONE][0]['value'] * 1 / 1000;
 		}
 		if(!empty($expiries)) {
 			foreach($expiries as $exkey=>$exvalue) {
@@ -2230,7 +2232,7 @@ function regiomino_shipping_get_available_pickupdates($product, $type = NULL, $c
 			//Rename product array and load the userobject of the author(seller)
 			foreach($productbackup as $pukey => $puvalue) {
 				$productobject = node_load($puvalue['nid']);
-				$degrees = $productobject->field_expiry[LANGUAGE_NONE][0]['second'];
+				if(isset($productobject->field_expiry[LANGUAGE_NONE][0]['second'])) $degrees = $productobject->field_expiry[LANGUAGE_NONE][0]['second'];
 				if(isset($degrees)) {
 					if(isset($expiries[$degrees])) {
 						$expiries[$degrees] += $puvalue['shipping_weight'] * $puvalue['menge'] / 1000;
@@ -2244,7 +2246,7 @@ function regiomino_shipping_get_available_pickupdates($product, $type = NULL, $c
 		else {
 			$productobject = node_load($productbackup);
 			if(isset($productobject->field_expiry[LANGUAGE_NONE][0]['second'])) $degrees = $productobject->field_expiry[LANGUAGE_NONE][0]['second'];
-			if(isset($degrees)) $expiries[$degrees] = $productobject->field_shippingweight[LANGUAGE_NONE][0]['value'] * 1 / 1000;
+			if(isset($degrees) && isset($productobject->field_shippingweight[LANGUAGE_NONE][0]['value'])) $expiries[$degrees] = $productobject->field_shippingweight[LANGUAGE_NONE][0]['value'] * 1 / 1000;
 		}
 		if(!empty($expiries)) {
 			foreach($expiries as $exkey=>$exvalue) {
@@ -2302,17 +2304,19 @@ function regiomino_shipping_check_remaining_capacity($uid, $fci, $shipperstartho
 		if(isset($product->field_shippingweight) && !empty($product->field_shippingweight)) $weight = $product->field_shippingweight[LANGUAGE_NONE][0]['value'];
 		$totalweight = $weight * $fcrecord->product_count;
 		if(isset($product->field_expiry) && !empty($product->field_expiry)) $degrees = $product->field_expiry[LANGUAGE_NONE][0]['second'];
-		if(isset($fcbookings[$degrees])) {
-			$fcbookings[$degrees] += $totalweight;
-		}
-		else {
-			$fcbookings[$degrees] = $totalweight;
+		if(isset($degrees)) {
+			if(isset($fcbookings[$degrees])) {
+				$fcbookings[$degrees] += $totalweight;
+			}
+			else {
+				$fcbookings[$degrees] = $totalweight;
+			}
 		}
 	}
 
 	$fcavailable = $fccapacity;
 	foreach($fccapacity as $key=>$value) {
-		if(!empty($fcbookings[$key])) $fcavailable[$key] -= $fcbookings[$key] / 1000;
+		if(isset($fcbookings[$key]) && !empty($fcbookings[$key])) $fcavailable[$key] -= $fcbookings[$key] / 1000;
 	}
 
 	return $fcavailable;

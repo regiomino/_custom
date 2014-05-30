@@ -441,6 +441,8 @@ function regiomino_productranking_do_search($searchterm = '*', $listsize = 20, $
 
 function regiomino_productranking_display_category() {
 	$queryparams = drupal_get_query_parameters();
+	if(!isset($queryparams['seller'])) $queryparams['seller'] = '';
+	if(!isset($queryparams['label'])) $queryparams['label'] = '';
 	$arg1 = arg(1);
 	if(!isset($arg1)) $arg1 = 'Gemüse';
 	$arg2 = arg(2);
@@ -658,6 +660,9 @@ function regiomino_productranking_display_category() {
 		if($queryparams['label'] == $labelid) {
 			$labelentities[$labelid]->selected = TRUE;
 		}
+		else {
+			$labelentities[$labelid]->selected = FALSE;
+		}
 	}
 
 
@@ -670,6 +675,9 @@ function regiomino_productranking_display_category() {
 		
 		if($queryparams['seller'] == $offervalues->uid) {
 			$sellers[$offervalues->uid]['active'] = TRUE;
+		}
+		else {
+			$sellers[$offervalues->uid]['active'] = FALSE;
 		}
 		if(isset($sellers[$offervalues->uid]['amount'])) {
 			$sellers[$offervalues->uid]['amount'] += 1;

@@ -426,7 +426,7 @@ function regiomino_cart_load_cart($cart_id = NULL) {
 					$cartitems[$fcikey]->nid = $fcivalue->field_offer[LANGUAGE_NONE][0]['target_id'];
 					$cartitems[$fcikey]->qty = $fcivalue->field_amount[LANGUAGE_NONE][0]['value'];
 					$cartitems[$fcikey]->frequency = $fcivalue->field_frequency[LANGUAGE_NONE][0]['value'];
-					$cartitems[$fcikey]->comments = $fcivalue->field_comments[LANGUAGE_NONE][0]['value'];
+					if(isset($fcivalue->field_comments[LANGUAGE_NONE][0]['value'])) { $cartitems[$fcikey]->comments = $fcivalue->field_comments[LANGUAGE_NONE][0]['value']; } else { $cartitems[$fcikey]->comments = ''; }
 					$cartitems[$fcikey]->shipping_type = $fcivalue->field_deliverykey[LANGUAGE_NONE][0]['value'];
 					$cartitems[$fcikey]->shipping_option = $fcivalue->field_deliveryoption[LANGUAGE_NONE][0]['value'];
 				}
@@ -737,7 +737,7 @@ function regiomino_cart_block_view($delta = '') {
 					$shippingoption = $verkaeufervalue['product'][$my_cart_item_id]['shipping_option'];
 					//Select chosen delivery options
 					$shippingoptionarray = explode("-", $shippingoption);
-					$shipping += $shippingoptionarray[5];
+					if(isset($shippingoptionarray[5])) $shipping += $shippingoptionarray[5];
 					
 					foreach($verkaeufervalue['product'] as $productkey=>$productvalue) {
 						$valueaddup += $productvalue['gesamt'];
@@ -826,7 +826,13 @@ function regiomino_cart_get_checkout_info_payment() {
 		foreach($payment_types as $key=>$value) {
 			$payment[$value->field_paymentkey[LANGUAGE_NONE][0]['value']] = $value->title;
 		}
-		$return = t('<strong>Payment</strong>:<br />@type', array('@type' => $payment[$paymentkey]));
+		if(isset($payment[$paymentkey])) {
+			$paymentstring = $payment[$paymentkey];
+		}
+		else {
+			$paymentstring = t('Balance');
+		}
+		$return = t('<strong>Payment</strong>:<br />@type', array('@type' => $paymentstring));
 	}
 	return $return;
 }
@@ -1229,9 +1235,11 @@ function regiomino_cart_add_to_cart($nid = 0, $qty = 0, $frq = 0) {
 	$cartobject = regiomino_cart_get_cartobject();
 	//Determine if a field collection item with the current nid already exists
 	$exists = 0;
-	foreach($cartobject['items'] as $fcikey => $fcivalue) {
-		if($fcivalue->field_offer[LANGUAGE_NONE][0]['target_id'] == $nid) {
-			$exists = $fcikey;
+	if(isset($cartobject['items']) && !empty($cartobject['items'])) {
+		foreach($cartobject['items'] as $fcikey => $fcivalue) {
+			if($fcivalue->field_offer[LANGUAGE_NONE][0]['target_id'] == $nid) {
+				$exists = $fcikey;
+			}
 		}
 	}
 	if($exists > 0) {
@@ -1351,8 +1359,11 @@ function regiomino_cart_get_cartobject($uid = NULL) {
 		$cartobject = entity_load('node', array_keys($cartqry['node']));
 		$cartobjectkey = array_keys($cartobject);
 		$cartobject = $cartobject[$cartobjectkey[0]];
-		foreach($cartobject->field_cart_items[LANGUAGE_NONE] as $fcivalues) {
-			$field_collection_item_values[] = $fcivalues['value'];
+		$field_collection_item_values = array();
+		if(isset($cartobject->field_cart_items[LANGUAGE_NONE]) && !empty($cartobject->field_cart_items[LANGUAGE_NONE])) {
+			foreach($cartobject->field_cart_items[LANGUAGE_NONE] as $fcivalues) {
+				$field_collection_item_values[] = $fcivalues['value'];
+			}
 		}
 		$cartitems = entity_load('field_collection_item', $field_collection_item_values);
 	}

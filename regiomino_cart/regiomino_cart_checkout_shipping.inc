@@ -275,6 +275,7 @@ function regiomino_cart_shippinginfo_form($form, &$form_state) {
 				),
 			),
 		);
+		if(!isset($pickupoption)) $pickupoption = NULL;
 		if(!empty($newcentralpickuparray)) {
 			$form['regiomino_cart']['cart_contents']['all']['centralpickup']['#default_value'] = $pickupoption;
 		}

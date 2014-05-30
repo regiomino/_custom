@@ -318,7 +318,15 @@ function regiomino_offer_get_baseprice($nodeobject) {
 
 //Helper function for calculating realtime discount levels for given products or arrays of products
 function regiomino_offer_get_discounts($nodeinfo) {
-	$fcis = entity_load('field_collection_item', array_values($nodeinfo->field_tradingunits[LANGUAGE_NONE]));
+
+	$fcloadarray = array();
+	if(isset($nodeinfo->field_tradingunits[LANGUAGE_NONE])) {
+		foreach($nodeinfo->field_tradingunits[LANGUAGE_NONE] as $key => $value) {
+			$fcloadarray[] = $value['value'];
+		}
+	}
+	$fcis = entity_load('field_collection_item', $fcloadarray);
+
 	//Sort without key preservation to ensure that the smalles unit has key 0
 	foreach($fcis as $key=>$value) {
 		if($value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != 'private') unset($fcis[$key]);
@@ -421,7 +429,13 @@ function regiomino_offer_sort_tradingunits_desc($a, $b) {
 
 function regiomino_offer_get_originalprice($nodeinfo, $formatted=FALSE, $notaltered=FALSE) {
 
-	$fcis = entity_load('field_collection_item', array_values($nodeinfo->field_tradingunits[LANGUAGE_NONE]));
+	$fcloadarray = array();
+	if(isset($nodeinfo->field_tradingunits[LANGUAGE_NONE])) {
+		foreach($nodeinfo->field_tradingunits[LANGUAGE_NONE] as $key => $value) {
+			$fcloadarray[] = $value['value'];
+		}
+	}
+	$fcis = entity_load('field_collection_item', $fcloadarray);
 	
 	//Sort without key preservation to ensure that the smalles unit has key 0
 	usort($fcis, "regiomino_offer_sort_tradingunits");
@@ -509,7 +523,7 @@ function regiomino_offer_get_tradingunit_moneyvalue($nodeinfo, $formatted=FALSE,
 			}
 		}
 		//Load all tradingunits stored in the node
-		$fcis = entity_load('field_collection_item', array_values($fcloadarray));
+		$fcis = entity_load('field_collection_item', $fcloadarray);
 		
 		//Filter out prices that do not belong to the customertype (private or commercial)
 		if(isset($fcis) && !empty($fcis)) {
@@ -677,9 +691,13 @@ function regiomino_offer_availability($nodeobject, $amount, $withcart = FALSE) {
 		// $stock_array[$i] = $i;
 	// }
 	
-		
-	//Load tradingunits
-	$fcis = entity_load('field_collection_item', array_values($nodeobject->field_tradingunits[LANGUAGE_NONE]));
+	$fcloadarray = array();
+	if(isset($nodeobject->field_tradingunits[LANGUAGE_NONE])) {
+		foreach($nodeobject->field_tradingunits[LANGUAGE_NONE] as $key => $value) {
+			$fcloadarray[] = $value['value'];
+		}
+	}
+	$fcis = entity_load('field_collection_item', $fcloadarray);
 	
 	//Sort without key preservation to ensure that the smalles unit has key 0
 	usort($fcis, "regiomino_offer_sort_tradingunits");
@@ -1054,7 +1072,8 @@ function regiomino_offer_most_sales_effective_products($timerange = 2419200, $pi
 			->propertyCondition('fci_p', $pickerfci)
 			->propertyCondition('pickup_range_from', $earliest, '>')
 			->execute();
-		$shipping_ids = array_keys($shippingqry['regiomino_order_shipping']);
+		$shipping_ids = array();
+		if(isset($shippingqry['regiomino_order_shipping'])) $shipping_ids = array_keys($shippingqry['regiomino_order_shipping']);
 
 		//Alle zu den Lieferaufträgen zugehörigern Bestellungen raussuchen
 		$query = new EntityFieldQuery;
@@ -1062,7 +1081,8 @@ function regiomino_offer_most_sales_effective_products($timerange = 2419200, $pi
 			->entityCondition('entity_type', 'regiomino_order')
 			->propertyCondition('shipping', $shipping_ids)
 			->execute();
-		$orders = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+		$orders = array();
+		if(isset($orderqry['regiomino_order'])) $orders = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
 		
 		//Ein Array füllen, dass für jede NID den Umsatz aufsummiert
 		$mostpopular = array();
