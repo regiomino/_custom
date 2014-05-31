@@ -2645,7 +2645,7 @@ function regiomino_invoice_comm($noarray) {
 				->execute();
 
 		}
-		watchdog('invoice', 'Invoices for commission fees have been generated');
+		if(!empty($commarray)) watchdog('invoice', 'Invoices for commission fees have been generated');
 	}
 }
 
