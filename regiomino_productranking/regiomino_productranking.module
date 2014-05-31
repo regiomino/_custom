@@ -522,6 +522,7 @@ function regiomino_productranking_display_category() {
 
 	$currentpath = current_path();
 	$rowsaddup = 0;
+	$subcatitems = array();
 	foreach($children as $childid=>$childobject) {
 
  		//Check if subcategory contains products (cache this)
