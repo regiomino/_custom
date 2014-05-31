@@ -1141,13 +1141,15 @@ function regiomino_cart_qty_select_form($form, &$form_state) {
 	$deliverycoptions = regiomino_shipping_get_available_pickupdates($nodeobject->nid, 'centralpickup', FALSE, TRUE);
 	
 	$availableforselection = FALSE;
-	switch($_SESSION['geolocation_data']['type']) {
-		case 'bringlivery':
-			$deliveryoptionstmp = array_keys($deliveryoptions);
-		break;
-		case 'centralpickup':
-			$deliveryoptionstmp = array_keys($deliverycoptions);
-		break;
+	if(isset($_SESSION['geolocation_data']['type'])) {
+		switch($_SESSION['geolocation_data']['type']) {
+			case 'bringlivery':
+				$deliveryoptionstmp = array_keys($deliveryoptions);
+			break;
+			case 'centralpickup':
+				$deliveryoptionstmp = array_keys($deliverycoptions);
+			break;
+		}
 	}
 	if(isset($deliveryoptionstmp) && isset($_SESSION['geolocation_data']['deliveryoption'])) {
 		if(in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptionstmp)) $availableforselection = TRUE;
