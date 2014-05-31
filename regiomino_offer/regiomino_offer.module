@@ -1050,7 +1050,7 @@ function regiomino_offer_most_sales_effective_products($timerange = 2419200, $pi
 			$pickerfci = $tmp[7];
 		}
 		else {
-			$pickerfci = 19;
+			$pickerfci = 4;
 		}
 	}
 	//Zeit definieren, ab der gesucht werden soll
