@@ -1149,7 +1149,9 @@ function regiomino_cart_qty_select_form($form, &$form_state) {
 			$deliveryoptionstmp = array_keys($deliverycoptions);
 		break;
 	}
-	if(in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptionstmp)) $availableforselection = TRUE;
+	if(isset($deliveryoptionstmp) && isset($_SESSION['geolocation_data']['deliveryoption'])) {
+		if(in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptionstmp)) $availableforselection = TRUE;
+	}
 	
 	if((!empty($deliveryoptions) || !empty($deliverycoptions)) && $availableforselection) {
 

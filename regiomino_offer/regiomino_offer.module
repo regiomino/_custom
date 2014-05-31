@@ -1171,7 +1171,7 @@ function regiomino_offer_most_sales_effective_products($timerange = 2419200, $pi
 			foreach($nodeqry['node'] as $nid=>$values) {
 				$deliverydates = regiomino_shipping_get_available_pickupdates($nid, $_SESSION['geolocation_data']['type']);
 				if(!isset($deliverydates) || empty($deliverydates)) {
-					unset($nodeqry['node'][$cpicnid]);
+					unset($nodeqry['node'][$nid]);
 				}
 			}
 			$nodeobjects = entity_load('node', array_keys($nodeqry['node']));
