@@ -435,6 +435,10 @@ function regiomino_user_user_login(&$edit, $account) {
 		//Get the user id of the now logged in user
 		$uid = $account->uid;
 		regiomino_cart_change_session_to_uid($oldsession, $uid);
+		if(in_array('Gewerbekunde', $account->roles) && isset($_SESSION['geolocation_data'])) {
+			$_SESSION['geolocation_data']['customertype'] = 'commercial';
+			$_SESSION['geolocation_data']['pricefieldtype'] = 'field_tu_price';
+		}
 	}
 }
 

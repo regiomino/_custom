@@ -363,6 +363,15 @@ function regiomino_subscription_load_subscription($subscription_id = NULL) {
 	$wares = &drupal_static(__FUNCTION__, array());
 
 	if(!isset($wares[$subscription_id])) {
+	
+		if(isset($_SESSION['geolocation_data'])) {
+			$customertype = $_SESSION['geolocation_data']['customertype'];
+			$pricefieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+		}
+		else {
+			$customertype = 'private';
+			$pricefieldtype = 'field_tu_gross';
+		}
 
 		//If no subscription_id was passed, use the one of the current user
 		if(!isset($subscription_id)) {
@@ -440,12 +449,12 @@ function regiomino_subscription_load_subscription($subscription_id = NULL) {
 				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['dauer'] = $subscriptionitemnode->field_duration[LANGUAGE_NONE][0]['value'];
 				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['mwst'] = rtrim(rtrim(number_format($subscriptionitemnode->field_salestax[LANGUAGE_NONE][0]['value'], 2, ",", "."), '0'), ',') . "%";
 				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['mwst_wert'] = $subscriptionitemnode->field_salestax[LANGUAGE_NONE][0]['value'];
-				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['preis'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, TRUE, TRUE, 'private', 1, 'field_tu_gross');
-				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['preis_wert'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, 'private', 1, 'field_tu_gross');
-				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['einzelpreis_wert'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, 'field_tu_gross') / $cartitemobject->qty;
-				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['gesamt'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, 'field_tu_gross');
-				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['gesamt_mwst'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, 'field_tu_vat');
-				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['includedvat'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, 'private', 1, 'field_tu_vat');
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['preis'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, TRUE, TRUE, $customertype, 1, $pricefieldtype);
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['preis_wert'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, $customertype, 1, $pricefieldtype);
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['einzelpreis_wert'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, $pricefieldtype) / $cartitemobject->qty;
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['gesamt'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, $customertype, $cartitemobject->qty, $pricefieldtype);
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['gesamt_mwst'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, $customertype, $cartitemobject->qty, 'field_tu_vat');
+				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['includedvat'] = regiomino_offer_get_tradingunit_moneyvalue($subscriptionitemnode, FALSE, TRUE, $customertype, 1, 'field_tu_vat');
 				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['einheit_amount'] = $subscriptionitemnode->field_packingunit[LANGUAGE_NONE][0]['first'];
 				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['einheit_unit'] = $subscriptionitemnode->field_packingunit[LANGUAGE_NONE][0]['second'];
 				$abokiste[$subscriptionitemselleruser->name]['product'][$subscriptionitemid]['einheit'] = rtrim(rtrim(number_format($subscriptionitemnode->field_packingunit[LANGUAGE_NONE][0]['first'], 2, ",", "."), '0'), ',') . ' ' . t(strip_tags($subscriptionitemnode->field_packingunit[LANGUAGE_NONE][0]['second']));
@@ -494,6 +503,15 @@ function regiomino_subscription_remove_product($subscription_item_id, $msg = 'Th
 
 function regiomino_subscription_get_subscription_block_text($return = FALSE) {
 
+	if(isset($_SESSION['geolocation_data'])) {
+		$customertype = $_SESSION['geolocation_data']['customertype'];
+		$pricefieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+	}
+	else {
+		$customertype = 'private';
+		$pricefieldtype = 'field_tu_gross';
+	}
+
 	setlocale(LC_MONETARY, 'de_DE');
 	global $user;
 	
@@ -516,7 +534,7 @@ function regiomino_subscription_get_subscription_block_text($return = FALSE) {
 					break;					
 			}
 
-			$sum += regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, 'private', $value['qty'], 'field_tu_gross');
+			$sum += regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, $customertype, $value['qty'], $pricefieldtype);
 			$noofrows++;
 		}
 	}

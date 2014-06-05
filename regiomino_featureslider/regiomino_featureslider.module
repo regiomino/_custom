@@ -57,6 +57,16 @@ function regiomino_featureslider_block_info() {
 * Implementation of hook_block_view().
 */
 function regiomino_featureslider_block_view($delta = '') {
+
+	if(isset($_SESSION['geolocation_data'])) {
+		$customertype = $_SESSION['geolocation_data']['customertype'];
+		$fieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+	}
+	else {
+		$customertype = 'private';
+		$fieldtype = 'field_tu_gross';
+	}
+
   switch($delta){
     case 'regiomino_featureslider':
 
@@ -99,8 +109,8 @@ function regiomino_featureslider_block_view($delta = '') {
 						'image_full' => theme('image_style',$productimage),
 						'id' => $value['node']->nid,
 						//'price_discounted' => regiomino_offer_get_discountedprice($value['node']),
-						'price_discounted' => regiomino_offer_get_tradingunit_moneyvalue($value['node'], FALSE, TRUE, 'private', 1, 'field_tu_gross'),
-						'price_original' => regiomino_offer_get_tradingunit_moneyvalue($value['node'], FALSE, TRUE, 'private', 1, 'field_tu_gross'),
+						'price_discounted' => regiomino_offer_get_tradingunit_moneyvalue($value['node'], FALSE, TRUE, $customertype, 1, $fieldtype),
+						'price_original' => regiomino_offer_get_tradingunit_moneyvalue($value['node'], FALSE, TRUE, $customertype, 1, $fieldtype),
 						'unit_first' => $value['node']->field_packingunit[LANGUAGE_NONE][0]['first'],
 						'unit_second' => $value['node']->field_packingunit[LANGUAGE_NONE][0]['second'],
 						'base_price' => regiomino_offer_get_baseprice($value['node']),
@@ -283,8 +293,18 @@ function regiomino_featureslider_get_feature_prices() {
 
 	$nid = $_POST['nid'];
 	$nodeobject = node_load($nid);
+	
+	if(isset($_SESSION['geolocation_data'])) {
+		$customertype = $_SESSION['geolocation_data']['customertype'];
+		$fieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+	}
+	else {
+		$customertype = 'private';
+		$fieldtype = 'field_tu_gross';
+	}
+	
 	//$discountedprice = regiomino_offer_get_discountedprice($nodeobject, TRUE);
-	$discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, TRUE, TRUE, 'private', 1, 'field_tu_gross');
+	$discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, TRUE, TRUE, $customertype, 1, $fieldtype);
 	
 
 	if($discountedprice != $_POST['currentprice']) {

@@ -369,6 +369,15 @@ function regiomino_cart_load_cart($cart_id = NULL) {
 	$wares = &drupal_static(__FUNCTION__, array());
 
 	if(!isset($wares[$cart_id])) {
+	
+		if(isset($_SESSION['geolocation_data'])) {
+			$customertype = $_SESSION['geolocation_data']['customertype'];
+			$pricefieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+		}
+		else {
+			$customertype = 'private';
+			$pricefieldtype = 'field_tu_gross';
+		}
 
 		//If no cart_id was passed, use the one of the current user
 		if(!isset($cart_id)) {
@@ -465,12 +474,14 @@ function regiomino_cart_load_cart($cart_id = NULL) {
 				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['dauer'] = $cartitemnode->field_duration[LANGUAGE_NONE][0]['value'];
 				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['mwst'] = rtrim(rtrim(number_format($cartitemnode->field_salestax[LANGUAGE_NONE][0]['value'], 2, ",", "."), '0'), ',') . "%";
 				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['mwst_wert'] = $cartitemnode->field_salestax[LANGUAGE_NONE][0]['value'];
-				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['preis'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, TRUE, TRUE, 'private', 1, 'field_tu_gross');
-				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['preis_wert'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, 'private', 1, 'field_tu_gross');
-				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['einzelpreis_wert'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, 'field_tu_gross') / $cartitemobject->qty;
-				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['gesamt'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, 'field_tu_gross');
-				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['gesamt_mwst'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, 'private', $cartitemobject->qty, 'field_tu_vat');
-				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['includedvat'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, 'private', 1, 'field_tu_vat');
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['preis'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, TRUE, TRUE, $customertype, 1, $pricefieldtype);
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['preis_wert'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, $customertype, 1, $pricefieldtype);
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['einzelpreis_wert'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, $customertype, $cartitemobject->qty, $pricefieldtype) / $cartitemobject->qty;
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['einzelpreis_wert_brutto'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, $customertype, $cartitemobject->qty, 'field_tu_gross') / $cartitemobject->qty;
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['gesamt'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, $customertype, $cartitemobject->qty, $pricefieldtype);
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['gesamt_brutto'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, $customertype, $cartitemobject->qty, 'field_tu_gross');
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['gesamt_mwst'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, $customertype, $cartitemobject->qty, 'field_tu_vat');
+				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['includedvat'] = regiomino_offer_get_tradingunit_moneyvalue($cartitemnode, FALSE, TRUE, $customertype, 1, 'field_tu_vat');
 				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['einheit_amount'] = $cartitemnode->field_packingunit[LANGUAGE_NONE][0]['first'];
 				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['einheit_unit'] = $cartitemnode->field_packingunit[LANGUAGE_NONE][0]['second'];
 				$warenkorb[$cartitemselleruser->name]['product'][$cartitemid]['einheit'] = rtrim(rtrim(number_format($cartitemnode->field_packingunit[LANGUAGE_NONE][0]['first'], 2, ",", "."), '0'), ',') . ' ' . t(strip_tags($cartitemnode->field_packingunit[LANGUAGE_NONE][0]['second']));
@@ -764,14 +775,32 @@ function regiomino_cart_block_view($delta = '') {
 				}
 				$leftoverbalance = $balance - $usedbalance;
 				$topay = $orderaddup - $balance;
+				
+				if(isset($_SESSION['geolocation_data'])) {
+					if($_SESSION['geolocation_data']['customertype'] == 'commercial') {
+						$topay += $vataddup;
+					}
+				}	
+				
 				if($topay < 0) $topay = 0;
+				
+				
 				
 				$block['content'] = '
 				
 				<table id="checkoutinvoice">
 						<tr>
 							<td class="desc">Gesamtbetrag der Bestellung</td><td class="numbers">' . number_format($orderaddup, 2, ",", ".") . ' &euro;</td>
-						</tr>
+						</tr>';
+						
+				if(isset($_SESSION['geolocation_data'])) {
+					if($_SESSION['geolocation_data']['customertype'] == 'commercial') {
+						$block['content'] .= '<tr>
+							<td class="desc">zzgl. MwSt.</td><td class="numbers">' . number_format($vataddup, 2, ",", ".") . ' &euro;</td>
+						</tr>';
+					}
+				}	
+				$block['content'] .= '
 						<tr>
 							<td class="desc">' . t('Used balance') . '</td><td class="numbers">' . number_format(-$usedbalance, 2, ",", ".") . ' &euro;</td>
 						</tr>
@@ -963,6 +992,15 @@ function regiomino_cart_get_checkout_info_shipping() {
 
 function regiomino_cart_get_cart_block_text($return = FALSE) {
 
+	if(isset($_SESSION['geolocation_data'])) {
+		$customertype = $_SESSION['geolocation_data']['customertype'];
+		$pricefieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+	}
+	else {
+		$customertype = 'private';
+		$pricefieldtype = 'field_tu_gross';
+	}
+
 	setlocale(LC_MONETARY, 'de_DE');
 	global $user;
 	if ($user->uid) {
@@ -991,7 +1029,7 @@ function regiomino_cart_get_cart_block_text($return = FALSE) {
 					break;					
 			}			
 			
-			$sum += regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', $value['qty'], 'field_tu_gross');
+			$sum += regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, $value['qty'], $pricefieldtype);
 			$noofrows++;
 		}
 	}

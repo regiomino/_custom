@@ -588,7 +588,17 @@ function regiomino_geolocation_set_sessiondata($values, $type, $deliveryoption) 
 		'longitude' => $longitude,
 		'type' => $type,
 		'deliveryoption' => $deliveryoption,
+		'customertype' => 'private', 
+		'pricefieldtype' => 'field_tu_gross', 
 	);
+	global $user;
+	if($user->uid > 0) {
+		$userobject = user_load($user->uid);
+		if(in_array('Gewerbekunde', $userobject->roles)) {
+			$_SESSION['geolocation_data']['customertype'] = 'commercial';
+			$_SESSION['geolocation_data']['pricefieldtype'] = 'field_tu_price';
+		}
+	}
 }
 
 function regiomino_geolocation_avlbmatch($loc, $vartype) {

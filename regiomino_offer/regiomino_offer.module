@@ -288,8 +288,16 @@ function regiomino_offer_get_baseprice($nodeobject) {
 	//Get unit
 	$unit = regiomino_offer_get_unit($nodeobject);
 	//Get discounted price
-	$discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
-	
+	if(isset($_SESSION['geolocation_data'])) {
+		$customertype = $_SESSION['geolocation_data']['customertype'];
+		$fieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+	}
+	else {
+		$customertype = 'private';
+		$fieldtype = 'field_tu_gross';
+	}
+	$discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, 1, $fieldtype);
+
 	$base_price = array();
 	switch($unit['second']) {
 		case 'pc':
@@ -308,7 +316,7 @@ function regiomino_offer_get_baseprice($nodeobject) {
 			break;
 	}
 	if($doit) {
-		$base_price['price'] = $discountedprice * $amount / $unit['first'];
+		$base_price['price'] = $discountedprice * $amount / str_replace(',', '.', $unit['first']);
 		$base_price['amount'] = $amount;
 		$base_price['unit'] = $unit['second'];
 		$baseprice = t('Base price: @amount @unit = @price €', array('@amount' => $base_price['amount'], '@unit' => $base_price['unit'], '@price' => number_format($base_price['price'], 2, ',', '.')));
@@ -682,6 +690,16 @@ function regiomino_offer_node_validate($node, $form, &$form_state) {
 } */
 
 function regiomino_offer_availability($nodeobject, $amount, $withcart = FALSE) {
+
+	if(isset($_SESSION['geolocation_data'])) {
+		$customertype = $_SESSION['geolocation_data']['customertype'];
+		$pricefieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+	}
+	else {
+		$customertype = 'private';
+		$pricefieldtype = 'field_tu_gross';
+	}
+	
 	//Retrieve currently available stock
 	$stock = regiomino_offer_get_currentstock($nodeobject, $withcart);	
 	$unit = regiomino_offer_get_unit($nodeobject, TRUE);
@@ -721,7 +739,15 @@ function regiomino_offer_availability($nodeobject, $amount, $withcart = FALSE) {
 	}
 	
 	//Check if product is marked as sold out and fill in the values for the return array accordingly
-	if($nodeobject->soldout) {
+	if(is_null(regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, 1, $pricefieldtype))) {
+		$available = 0;
+		//Force the prefilled array of available stock options to 0. Necessary if stock has not been bought out or reduced to 0, but product was marked as sold out
+		$stock_array = array();
+		$stock_array[0] = 0;
+		//Set status message
+		$message = t("Unfortunately this product <strong>@product</strong> is not available for @customertype customers.", array('@product' => $nodeobject->title, '@customertype' => $customertype));
+	}
+	elseif($nodeobject->soldout) {
 		//Set availability to 0 -> unavailable
 		$available = 0;
 		//Force the prefilled array of available stock options to 0. Necessary if stock has not been bought out or reduced to 0, but product was marked as sold out
@@ -1053,17 +1079,29 @@ function regiomino_offer_most_sales_effective_products($timerange = 2419200, $pi
 			$pickerfci = 4;
 		}
 	}
+	
+	if(isset($_SESSION['geolocation_data'])) {
+		$customertype = $_SESSION['geolocation_data']['customertype'];
+		$fieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+	}
+	else {
+		$customertype = 'private';
+		$fieldtype = 'field_tu_gross';
+	}
+			
 	//Zeit definieren, ab der gesucht werden soll
 	$time = time();
 	$earliest = $time - $timerange;
 
 	$cacheexpire = $time - $cachingtime;
-	$cached = cache_get('highlights_de_' . $pickerfci . '_' . $timerange . '_' . $forcefillup . '_' . $limit . '_' . $offset);
+	$cached = cache_get('highlights_de_' . $pickerfci . '_' . $timerange . '_' . $forcefillup . '_' . $limit . '_' . $offset . '_' . $customertype . '_' . $fieldtype);
 	if($cached && $cached->created > $cacheexpire) {
+
 		$mostpopular = $cached->data;
 	}
 	else {
-		cache_clear_all('highlights_de_' . $pickerfci . '_' . $timerange . '_' . $forcefillup . '_' . $limit . '_' . $offset, 'cache', TRUE);
+
+		cache_clear_all('highlights_de_' . $pickerfci . '_' . $timerange . '_' . $forcefillup . '_' . $limit . '_' . $offset . '_' . $customertype . '_' . $fieldtype, 'cache', TRUE);
 
 			$orders = array();
 		//Alle Lieferaufträge raussuchen, die später als die definierte Zeit ausgeführt wurden
@@ -1086,19 +1124,18 @@ function regiomino_offer_most_sales_effective_products($timerange = 2419200, $pi
 				->execute();
 			if(isset($orderqry['regiomino_order'])) $orders = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
 		}
-		
 		//Ein Array füllen, dass für jede NID den Umsatz aufsummiert
 		$mostpopular = array();
 		foreach($orders as $orderid=>$orderobject) {
 			$mostpopular[$orderobject->nid]['node'] = node_load($orderobject->nid);
 			if(!isset($mostpopular[$orderobject->nid]['cash']) || empty($mostpopular[$orderobject->nid]['cash'])) {
-				$mostpopular[$orderobject->nid]['cash'] = regiomino_offer_get_tradingunit_moneyvalue($mostpopular[$orderobject->nid]['node'], FALSE, FALSE, 'private', $orderobject->product_count, 'field_tu_gross');
+				$mostpopular[$orderobject->nid]['cash'] = regiomino_offer_get_tradingunit_moneyvalue($mostpopular[$orderobject->nid]['node'], FALSE, FALSE, $customertype, $orderobject->product_count, $fieldtype);
 			}
 			else {
-				$mostpopular[$orderobject->nid]['cash'] += regiomino_offer_get_tradingunit_moneyvalue($mostpopular[$orderobject->nid]['node'], FALSE, FALSE, 'private', $orderobject->product_count, 'field_tu_gross');
+				$mostpopular[$orderobject->nid]['cash'] += regiomino_offer_get_tradingunit_moneyvalue($mostpopular[$orderobject->nid]['node'], FALSE, FALSE, $customertype, $orderobject->product_count, $fieldtype);
 			}
+			if(is_null($mostpopular[$orderobject->nid]['cash'])) unset($mostpopular[$orderobject->nid]);
 		}
-	
 		//Da manche Angebote Nachfahren von anderen sein können, müssen auch diese zusammengehörenden Angebote zusammenaddiert werden
 		ksort($mostpopular);
 		foreach($mostpopular as $nid=>$values) {
@@ -1153,6 +1190,7 @@ function regiomino_offer_most_sales_effective_products($timerange = 2419200, $pi
 			$mostpopular = array_slice($mostpopular, $offset, $limit, TRUE);
 		}
 		
+		//Wenn das Limit nicht erreicht wird kann das Array bei Angabe von forcefillup aufgefüllt werden mit anderen Produkten
 		$mostpopularcount = count($mostpopular);
 		if($forcefillup && $mostpopularcount < $limit) {
 			$forbiddenkeys = array_keys($mostpopular);
@@ -1166,22 +1204,29 @@ function regiomino_offer_most_sales_effective_products($timerange = 2419200, $pi
 			if(!empty($forbiddenkeys)) $query->propertyCondition('nid', $forbiddenkeys, 'NOT IN');
 			$nodeqry = $query
 				->propertyOrderBy('created', 'DESC')
-				->range($offset, $difference)
+				->range($offset, 20000)
 				->execute();
+			$diffcount = 1;
 			foreach($nodeqry['node'] as $nid=>$values) {
 				if(isset($_SESSION['geolocation_data']['type'])) $deliverydates = regiomino_shipping_get_available_pickupdates($nid, $_SESSION['geolocation_data']['type']);
-				if(!isset($deliverydates) || empty($deliverydates)) {
+				if(!isset($deliverydates) || empty($deliverydates) || $diffcount > $difference) {
 					unset($nodeqry['node'][$nid]);
+				}
+				else {
+					$diffcount++;
 				}
 			}
 			$nodeobjects = entity_load('node', array_keys($nodeqry['node']));
 			foreach($nodeobjects as $nid=>$nodeobject) {
-				$mostpopular[$nid]['node'] = $nodeobject;
-				$mostpopular[$nid]['cash'] = 0;
+				$money = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, FALSE, $customertype, 1, $fieldtype);
+				if($money) {
+					$mostpopular[$nid]['node'] = $nodeobject;
+					$mostpopular[$nid]['cash'] = 0;
+				}
 			}
 		}
 
-		cache_set('highlights_de_' . $pickerfci . '_' . $timerange . '_' . $forcefillup . '_' . $limit . '_' . $offset, $mostpopular);
+		cache_set('highlights_de_' . $pickerfci . '_' . $timerange . '_' . $forcefillup . '_' . $limit . '_' . $offset . '_' . $customertype . '_' . $fieldtype, $mostpopular);
 	}
 	return $mostpopular;
 }

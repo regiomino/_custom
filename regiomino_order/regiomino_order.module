@@ -815,6 +815,16 @@ function regiomino_order_calc_paypal_fee($value, $maxiteration) {
  * Creates a new order
  */
 function regiomino_order_payment_form_submit($form, &$form_state) {
+
+	if(isset($_SESSION['geolocation_data'])) {
+		$customertype = $_SESSION['geolocation_data']['customertype'];
+		$pricefieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+	}
+	else {
+		$customertype = 'private';
+		$pricefieldtype = 'field_tu_gross';
+	}
+
 	//Get uid of currently logged in user
 	global $user;
 	$uid = $user->uid;
@@ -871,7 +881,6 @@ function regiomino_order_payment_form_submit($form, &$form_state) {
 		
 		$selectedshippingoption = array();
 		$selectedshippingoption = explode("-", $verkaeufervalue['product'][key($verkaeufervalue['product'])]['shipping_option']);
-
 		$shipping_id = db_insert('regiomino_order_shipping')
 			->fields(array(
 				'shipping_type' => $verkaeufervalue['product'][key($verkaeufervalue['product'])]['shipping_type'],
@@ -920,7 +929,7 @@ function regiomino_order_payment_form_submit($form, &$form_state) {
 			 */
 			$upmenge = (int)$productvalue['menge'];
 			$uppreis = (double)$productvalue['einzelpreis_wert'];
-			$negativeprice -= $productvalue['gesamt'];
+			$negativeprice -= $productvalue['gesamt_brutto'];
 		}			
 		
 		$ordertotal += $negativeprice * -1;
@@ -969,7 +978,7 @@ function regiomino_order_payment_form_submit($form, &$form_state) {
 		foreach($uidvalue as $nidkey=>$nidvalue) {
 			//Get unformatted discounted product price
 			$nodeobject = node_load($nidkey);
-			$preis = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', $nidvalue['menge'], 'field_tu_gross') / $nidvalue['menge'];
+			$preis = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, $nidvalue['menge'], 'field_tu_gross') / $nidvalue['menge'];
 			$ordertime = time();
 			$created = date('Y-m-d G:i:s', $ordertime);
 			$sellerprofilenode = node_load($nidvalue['sellernid']);
@@ -989,6 +998,12 @@ function regiomino_order_payment_form_submit($form, &$form_state) {
 				'nid' => $nidkey,
 				'vid' => $nidvalue['vid'],
 				'order_status' => $order_status_type,
+				'field_tu_gross' => $preis,
+				'field_tu_price' => regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, $nidvalue['menge'], 'field_tu_price') / $nidvalue['menge'],
+				'field_tu_vat' => regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, $nidvalue['menge'], 'field_tu_vat') / $nidvalue['menge'],
+				'field_tu_commission' => regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, $nidvalue['menge'], 'field_tu_commission') / $nidvalue['menge'],
+				'field_tu_shipping' => regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, $nidvalue['menge'], 'field_tu_shipping') / $nidvalue['menge'],
+				'field_tu_revenue' => regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, $nidvalue['menge'], 'field_tu_revenue') / $nidvalue['menge'],
 				'product_price' => $preis,
 				'product_count' => $nidvalue['menge'],
 				'shipping' => $nidvalue['versand'],
@@ -1271,7 +1286,7 @@ function regiomino_order_payment_form_submit($form, &$form_state) {
 				$nodeobject = node_load($productvalue['nid']);
 				$options['query']['item_name_' . $counter] = $productvalue['title'];
 				$options['query']['item_number_' . $counter] = $productvalue['nid'];
-				$options['query']['amount_' . $counter] = $productvalue['einzelpreis_wert'];
+				$options['query']['amount_' . $counter] = $productvalue['einzelpreis_wert_brutto'];
 				$options['query']['quantity_' . $counter] = $productvalue['menge'];
 				$counter++;
 			}	

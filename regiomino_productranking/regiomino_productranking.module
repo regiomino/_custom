@@ -146,6 +146,15 @@ function regiomino_productranking_searchterm() {
 	$return = 'No results';
 	$queryparams = drupal_get_query_parameters();
 	
+	if(isset($_SESSION['geolocation_data'])) {
+		$customertype = $_SESSION['geolocation_data']['customertype'];
+		$pricefieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+	}
+	else {
+		$customertype = 'private';
+		$pricefieldtype = 'field_tu_gross';
+	}
+	
 	if(!empty($term)) {
 		
 		$results = json_decode(regiomino_productranking_do_search($term, 100, 1, 'title,image,pickupdelay,duration,origin_locality,origin_country,sellerprofile_nid,sellerprofile_title,sellerprofile_locality,labels,_author,origin_lat,origin_lon,packingunit_first,packingunit_second', '_kategorie', 100));
@@ -236,8 +245,8 @@ function regiomino_productranking_searchterm() {
 					if(in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptions)) $availableforselection = TRUE;
 					$tmpobject->availableforselection = $availableforselection;
 					$nodeobject = node_load($value->id);
-					$tmpobject->discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
-					$tmpobject->originalprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
+					$tmpobject->discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, 1, $pricefieldtype);
+					$tmpobject->originalprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, 1, $pricefieldtype);
 					$tmpobject->baseprice = regiomino_offer_get_baseprice($nodeobject);
 				}
 				$offers[$value->id] = $tmpobject;
@@ -276,6 +285,15 @@ function regiomino_productranking_searchterm() {
 
 function regiomino_productranking_display_category_with_search($maincategory) {
 
+	if(isset($_SESSION['geolocation_data'])) {
+		$customertype = $_SESSION['geolocation_data']['customertype'];
+		$pricefieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+	}
+	else {
+		$customertype = 'private';
+		$pricefieldtype = 'field_tu_gross';
+	}
+	
 	$subcategory = arg(2);
 	if(!isset($subcategory)) {
 		drupal_set_title($maincategory);
@@ -385,8 +403,8 @@ function regiomino_productranking_display_category_with_search($maincategory) {
 			if(in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptions)) $availableforselection = TRUE;
 			$offers[$key]->fields->availableforselection = $availableforselection;
 			$nodeobject = node_load($value->id);
-			$offers[$key]->fields->discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
-			$offers[$key]->fields->originalprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
+			$offers[$key]->fields->discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, 1, $pricefieldtype);
+			$offers[$key]->fields->originalprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, 1, $pricefieldtype);
 			$offers[$key]->fields->baseprice = regiomino_offer_get_baseprice($nodeobject);
 		}
 	}
@@ -440,6 +458,16 @@ function regiomino_productranking_do_search($searchterm = '*', $listsize = 20, $
 }
 
 function regiomino_productranking_display_category() {
+
+	if(isset($_SESSION['geolocation_data'])) {
+		$customertype = $_SESSION['geolocation_data']['customertype'];
+		$pricefieldtype = $_SESSION['geolocation_data']['pricefieldtype'];
+	}
+	else {
+		$customertype = 'private';
+		$pricefieldtype = 'field_tu_gross';
+	}
+	
 	$queryparams = drupal_get_query_parameters();
 	if(!isset($queryparams['seller'])) $queryparams['seller'] = '';
 	if(!isset($queryparams['label'])) $queryparams['label'] = '';
@@ -551,13 +579,17 @@ function regiomino_productranking_display_category() {
 			$offer_keys = array_keys($offers);
 			$numrows = 0;
 			foreach($offers as $offerkey=>$offervalue) {
+			
+				$offerprice = regiomino_offer_get_tradingunit_moneyvalue($offervalue, FALSE, TRUE, $customertype, 1, $pricefieldtype);
+			
+			
 				$avlbpickupdates = regiomino_shipping_get_available_pickupdates($offervalue->nid, 'bringlivery', FALSE);
 				$avlbcpickupdates = regiomino_shipping_get_available_pickupdates($offervalue->nid, 'centralpickup', FALSE);
 				$delay = $offervalue->field_pickupdelay[LANGUAGE_NONE][0]['value'] * 3600;
 				$duration = strtotime($offervalue->field_duration[LANGUAGE_NONE][0]['value']) + 86400;
 				$shipping = regiomino_shipping_get_latestorder($avlbpickupdates, $delay, $duration);
 				$centralpickup = regiomino_shipping_get_latestorder($avlbcpickupdates, $delay, $duration, 'centralpickup');
-				if(!empty($shipping['begin']) && !empty($centralpickup[0]['begin'])) {
+				if(!empty($shipping['begin']) && !empty($centralpickup[0]['begin']) && !is_null($offerprice)) {
 					$numrows++;
 				}
 			}
@@ -595,6 +627,9 @@ function regiomino_productranking_display_category() {
 	$offers = regiomino_productranking_boost_entities($offers);
 
 	foreach($offers as $key=>$value) {
+		$nodeobject = node_load($offers[$key]->nid);
+		$discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, $customertype, 1, $pricefieldtype);
+		
 		$avlbpickupdates = regiomino_shipping_get_available_pickupdates($value->nid, 'bringlivery', FALSE);
 		$avlbcpickupdates = regiomino_shipping_get_available_pickupdates($value->nid, 'centralpickup', FALSE);
 		$delay = $value->field_pickupdelay[LANGUAGE_NONE][0]['value'] * 3600;
@@ -602,7 +637,7 @@ function regiomino_productranking_display_category() {
 		$shipping = regiomino_shipping_get_latestorder($avlbpickupdates, $delay, $duration);
 		$centralpickup = regiomino_shipping_get_latestorder($avlbcpickupdates, $delay, $duration, 'centralpickup');
 		
-		if(empty($shipping['begin']) || empty($centralpickup[0]['begin'])) {
+		if(empty($shipping['begin']) || empty($centralpickup[0]['begin']) || is_null($discountedprice)) {
 			unset($offers[$key]);
 		}
 		else {
@@ -623,9 +658,8 @@ function regiomino_productranking_display_category() {
 			}
 			if(in_array($_SESSION['geolocation_data']['deliveryoption'], $deliveryoptions)) $availableforselection = TRUE;
 			$offers[$key]->availableforselection = $availableforselection;
-			$nodeobject = node_load($offers[$key]->nid);
-			$offers[$key]->discountedprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
-			$offers[$key]->originalprice = regiomino_offer_get_tradingunit_moneyvalue($nodeobject, FALSE, TRUE, 'private', 1, 'field_tu_gross');
+			$offers[$key]->discountedprice = $discountedprice;
+			$offers[$key]->originalprice = $discountedprice;
 			$offers[$key]->baseprice = regiomino_offer_get_baseprice($nodeobject);
 			$seller_user = user_load($offers[$key]->uid);
 			$offers[$key]->seller_profile = node_load($seller_user->field_profilereference[LANGUAGE_NONE][0]['target_id']);
