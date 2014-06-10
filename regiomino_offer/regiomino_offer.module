@@ -541,7 +541,6 @@ function regiomino_offer_get_tradingunit_moneyvalue($nodeinfo, $formatted=FALSE,
 		}
 		//If prices are left, continue here. Otherwise NULL is returned
 		if(isset($fcis) && !empty($fcis)) {
-
 			//Sort DESC by tradingunit size without key preservation
 			usort($fcis, "regiomino_offer_sort_tradingunits_desc");
 			//Find out which tradingunit size matches the given amount (mod = 0)
@@ -555,6 +554,10 @@ function regiomino_offer_get_tradingunit_moneyvalue($nodeinfo, $formatted=FALSE,
 					$tuvalue = $tuamount * $value->{$field}[LANGUAGE_NONE][0]['value'];
 					break;
 				}
+			}
+			if(is_null($tuvalue) && $amount == 1) {
+				usort($fcis, "regiomino_offer_sort_tradingunits");
+				$tuvalue = $fcis[0]->{$field}[LANGUAGE_NONE][0]['value'] / $fcis[0]->field_tu_size[LANGUAGE_NONE][0]['value'];
 			}
 		}
 		if($formatted && !is_null($tuvalue)) {

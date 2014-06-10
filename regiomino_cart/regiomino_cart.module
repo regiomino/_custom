@@ -1160,7 +1160,6 @@ function regiomino_cart_qty_select_form($form, &$form_state) {
 	//Check availability for purchasing 1 unit (include items that have already been put in cart)
 	$availability = regiomino_offer_availability($nodeobject, 1);
 	$stock_array = $availability->stock;
-	
 
 	switch($availability->available) {
 		case 0:
@@ -1263,6 +1262,13 @@ function regiomino_cart_add_to_cart($nid = 0, $qty = 0, $frq = 0) {
 	
 	$nodeobject = node_load($nid);
 	$vid = $nodeobject->vid;
+	
+	//Check if qty is an allowed multiplier of stock selection options
+	$availability = regiomino_offer_availability($nodeobject, 1);
+	$stock_array = array_keys($availability->stock);
+	if(!in_array($qty, $stock_array)) {
+		$qty = $stock_array[0];
+	}
 	
 	//Get user id to use as cart id {regiomino_cart}
 	global $user;
