@@ -89,9 +89,9 @@ function regiomino_invoice_cron() {
 	$time_to = mktime(23,59,59,date('n'),0,date('Y'));
 	$buffer = 864000;
 	
- 	regiomino_invoice_summary_seller($time_from, $time_to, $buffer);
-	regiomino_invoice_summary_shipper($time_from, $time_to, $buffer);
-	regiomino_invoice_summary_regiomino($time_from, $time_to, $buffer);
+ 	//regiomino_invoice_summary_seller($time_from, $time_to, $buffer);
+	//regiomino_invoice_summary_shipper($time_from, $time_to, $buffer);
+	//regiomino_invoice_summary_regiomino($time_from, $time_to, $buffer);
 }
 
 function regiomino_invoice_summary_shipper($time_from, $time_to, $buffer) {
