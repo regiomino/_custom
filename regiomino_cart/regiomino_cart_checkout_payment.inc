@@ -237,8 +237,9 @@ function regiomino_cart_paymentinfo_form_submit($form, &$form_state) {
 	//Retrieve payment options and make them selectable through form item
 	global $user;
 	$userobject = user_load($user->uid);
-	if(isset($form_state['values']['paywithbalance'])) {
+
 		$userobject->field_use_balance_for_purchase['und'][0]['value'] = $form_state['values']['paywithbalance'];
+
 		if($form_state['values']['paywithbalance'] == '1') {
 			$userobject->field_payment['und'][0]['value'] = $form_state['values']['paymentbalance'];
 		}
@@ -250,6 +251,6 @@ function regiomino_cart_paymentinfo_form_submit($form, &$form_state) {
 		$userobject->field_bankcode[LANGUAGE_NONE][0]['value'] = $form_state['values']['bankcode'];
 		
 		user_save($userobject);
-	}
+	
 	drupal_goto('checkout/verify');
 }
