@@ -23,6 +23,33 @@ function regiomino_geolocation_init() {
 		}
 	}
 	
+	/* global $base_url;
+	$tmp1 = explode('//', $base_url);
+	$tmp2 = explode('.', $tmp1[1]);
+	if(isset($tmp2[1]) && !empty($tmp2[0])) {
+		if(isset($_SESSION['geolocation_data'])) {
+			//check if session zipcode is contained in input region
+			$query = new EntityFieldQuery();
+			$result = $query
+				->entityCondition('entity_type', 'field_collection_item')
+				->entityCondition('bundle', 'field_delivery_options')
+				->fieldCondition('field_metro_key', 'value', $tmp2[0])
+				->fieldCondition('field_delivery_areas', 'value', $_SESSION['geolocation_data']['zipcode'])
+				->execute();
+			if(empty($result)) {
+				//detect region automatically based on input
+				regiomino_geolocation_detect_by_subdomain($tmp2[0]);
+			}
+			else {
+				//all is good, do nothing
+			}
+		}
+		else {
+			//detect region automatically based on input
+			regiomino_geolocation_detect_by_subdomain($tmp2[0]);
+		}
+	} */
+	
 	theme('regiomino_geolocation_javascript');
 }
 

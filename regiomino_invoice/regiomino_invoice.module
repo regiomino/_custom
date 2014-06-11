@@ -89,9 +89,9 @@ function regiomino_invoice_cron() {
 	$time_to = mktime(23,59,59,date('n'),0,date('Y'));
 	$buffer = 864000;
 	
- 	//regiomino_invoice_summary_seller($time_from, $time_to, $buffer);
-	//regiomino_invoice_summary_shipper($time_from, $time_to, $buffer);
-	//regiomino_invoice_summary_regiomino($time_from, $time_to, $buffer);
+ 	regiomino_invoice_summary_seller($time_from, $time_to, $buffer);
+	regiomino_invoice_summary_shipper($time_from, $time_to, $buffer);
+	regiomino_invoice_summary_regiomino($time_from, $time_to, $buffer);
 }
 
 function regiomino_invoice_summary_shipper($time_from, $time_to, $buffer) {
@@ -775,16 +775,10 @@ function regiomino_invoice_summary_seller($time_from, $time_to, $buffer) {
 				if(isset($invoices_sale_items)) {
 					foreach($invoices_sale_items as $sale_items) {
 						foreach($sale_items->field_order_item[LANGUAGE_NONE] as $key_sale_item => $val_sale_item) {
-							$orderquery = db_query("SELECT o.nid, o.product_count, o.billing_first_name, o.billing_last_name, o.invoice, o.created, o.order_process_id FROM {regiomino_order} o WHERE o.order_id = :order_id", array(':order_id' => $val_sale_item['target_id']));
+							$orderquery = db_query("SELECT o.nid, o.product_count, o.product_price, o.billing_first_name, o.billing_last_name, o.invoice, o.created, o.order_process_id FROM {regiomino_order} o WHERE o.order_id = :order_id", array(':order_id' => $val_sale_item['target_id']));
 							$result = $orderquery->fetchAssoc();
 							$nodeobject = node_load($result['nid']);
 							$vatvalue = $nodeobject->field_salestax[LANGUAGE_NONE][0]['value'];
-							if($sale_items->created < 1384038000) {
-								$discountedprice = regiomino_offer_get_discountedprice($nodeobject, FALSE, TRUE, TRUE);
-							}
-							else {
-								$discountedprice = regiomino_offer_get_discountedprice($nodeobject);
-							}
 							//Add name to array. This will be overwritten multiple time, because it's always the same name.
 							//But it's important to use the name from the order db, since this can not be changed by customer anymore
 							$invoiced_items['sales'][$sale_items->nid][$vatvalue]['customername'] = $result['billing_first_name'] . ' ' . $result['billing_last_name'];
@@ -802,20 +796,20 @@ function regiomino_invoice_summary_seller($time_from, $time_to, $buffer) {
 							//Add up order total for each tax value
 							if(isset($invoiced_items['sales'][$sale_items->nid][$vatvalue]['productcount'])) {
 								if($sale_items->field_cancellation[LANGUAGE_NONE][0]['value'] == 1) {
-									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['total'] += $result['product_count'] * $discountedprice * -1;
+									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['total'] += $result['product_count'] * $result['product_price'] * -1;
 									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['type'] = 'Warenverkauf (Storno)';
 								}
 								else {
-									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['total'] += $result['product_count'] * $discountedprice;
+									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['total'] += $result['product_count'] * $result['product_price'];
 								}
 							}
 							else {
 								if($sale_items->field_cancellation[LANGUAGE_NONE][0]['value'] == 1) {
-									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['total'] = $result['product_count'] * $discountedprice * -1;
+									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['total'] = $result['product_count'] * $result['product_price'] * -1;
 									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['type'] = 'Warenverkauf (Storno)';
 								}
 								else {
-									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['total'] = $result['product_count'] * $discountedprice;
+									$invoiced_items['sales'][$sale_items->nid][$vatvalue]['total'] = $result['product_count'] * $result['product_price'];
 								}
 							}
 						}
@@ -1384,7 +1378,7 @@ function regiomino_invoice_summary_seller($time_from, $time_to, $buffer) {
 					<th class="desccolumn">Bezeichnung</th>
 				</tr>';
 				$html .= '<tr><td class="firstcolumn">' . number_format($internaladdupsales, '2', ',', '.') . ' €</td><td class="firstcolumn">' . number_format($internaladdupsalesnetto, '2', ',', '.') . ' €</td><td class="desccolumn">Warenverkäufe</td></tr>';
-				$html .= '<tr><td class="firstcolumn">' . number_format($internaladdupcommission, '2', ',', '.') . ' €</td><td class="firstcolumn">' . number_format($internaladdupcommissionnetto, '2', ',', '.') . ' €</td><td class="desccolumn">Regiomino Gebühr ' . number_format($seller_profile->field_commission[LANGUAGE_NONE][0]['value'], '2', ',', '.') . '%</td></tr>';
+				$html .= '<tr><td class="firstcolumn">' . number_format($internaladdupcommission, '2', ',', '.') . ' €</td><td class="firstcolumn">' . number_format($internaladdupcommissionnetto, '2', ',', '.') . ' €</td><td class="desccolumn">Regiomino Gebühr</td></tr>';
 				$html .= '<tr><td class="firstcolumn">' . number_format($internaladdupshipping, '2', ',', '.') . ' €</td><td class="firstcolumn">' . number_format($internaladdupshippingnetto, '2', ',', '.') . ' €</td><td class="desccolumn">Versandkosten</td></tr>';
 				if($internaladdupshippingsales > 0) $html .= '<tr><td class="firstcolumn">' . number_format($internaladdupshippingsales, '2', ',', '.') . ' €</td><td>Versandrechnungen an Kunden</td></tr>';
 				$html .= '</table><table class="taxcalcheader" cellpadding="4">
@@ -2111,11 +2105,11 @@ function regiomino_invoice_shp() {
 			$shipper_node = node_load($shipper_user->field_profilereference_shipper['und'][0]['target_id']);
 			$shipping_id = $row['shipping_id']; //Make this the actual shipping_id
 
-			$pricequery = db_query("SELECT product_count, product_price, nid FROM {regiomino_order} WHERE shipping = :shipping", array(':shipping' => $shipping_id));
+			$pricequery = db_query("SELECT product_count, field_tu_shipping, product_price, nid FROM {regiomino_order} WHERE shipping = :shipping", array(':shipping' => $shipping_id));
 			$netto = 0;
 			while($pricerow = $pricequery->fetchAssoc()) {
 				$priceno = node_load($pricerow['nid']);
-				$netto += regiomino_offer_get_tradingunit_moneyvalue($priceno, FALSE, FALSE, 'private', $pricerow['product_count'], 'field_tu_shipping');
+				$netto += round($pricerow['field_tu_shipping'] * $pricerow['product_count'], 2);
 			}
 
 			$row['shipping_price'] = round($netto * 1.19, 2);
@@ -2389,7 +2383,7 @@ function regiomino_invoice_comm($noarray) {
 		$commarray = array();
 		foreach($noarray as $key => $value) {
 			$result = db_select('regiomino_order', 'bo')
-				->fields('bo', array('product_count', 'product_price', 'created', 'seller_company', 'seller_street1', 'seller_street2', 'seller_city', 'seller_postal_code', 'shipping', 'order_process_id'))
+				->fields('bo', array('product_count', 'field_tu_commission', 'product_price', 'created', 'seller_company', 'seller_street1', 'seller_street2', 'seller_city', 'seller_postal_code', 'shipping', 'order_process_id'))
 				->condition('nid', $value->nid)
 				->condition('order_status', 'canceled', '!=')
 				->condition('order_status', 'pending', '!=')
@@ -2400,6 +2394,7 @@ function regiomino_invoice_comm($noarray) {
 			while($record = $result->fetchAssoc()) {
 				$product_count = (int)$record['product_count'];
 				$product_price = (float)$record['product_price'];
+				$field_tu_commission = (float)$record['field_tu_commission'];
 				$commarray[$value->uid]['seller']['seller_company'] = $record['seller_company'];
 				$commarray[$value->uid]['seller']['seller_street1'] = $record['seller_street1'];
 				$commarray[$value->uid]['seller']['seller_street2'] = $record['seller_street2'];
@@ -2407,6 +2402,7 @@ function regiomino_invoice_comm($noarray) {
 				$commarray[$value->uid]['seller']['seller_postal_code'] = $record['seller_postal_code'];
 				$commarray[$value->uid]['nodes'][$value->nid]['title'] = $value->title;
 				$commarray[$value->uid]['nodes'][$value->nid]['sales'] += $product_count * $product_price;
+				$commarray[$value->uid]['nodes'][$value->nid]['comm'] += $product_count * $field_tu_commission;
 				$commarray[$value->uid]['nodes'][$value->nid]['count'] += $product_count;
 				$commarray[$value->uid]['nodes'][$value->nid]['orders'][$counter]['number'] = (int)$record['shipping'];
 				$commarray[$value->uid]['nodes'][$value->nid]['orders'][$counter]['process_number'] = (int)$record['order_process_id'];
@@ -2532,8 +2528,8 @@ function regiomino_invoice_comm($noarray) {
 					$offernode = node_load($nodekey);
 					$offernode->field_included_in_invoice['und'][0]['target_id'] = $newnid;
 					node_save($offernode);
-					$grossprice = round(regiomino_offer_get_tradingunit_moneyvalue($offernode, FALSE, FALSE, 'private', $nodevalue['count'], 'field_tu_commission') * 1.19, 2);
-					$netprice = round(regiomino_offer_get_tradingunit_moneyvalue($offernode, FALSE, FALSE, 'private', $nodevalue['count'], 'field_tu_commission'), 2);
+					$grossprice = round($nodevalue['comm'] * 1.19, 2);
+					$netprice = round($nodevalue['comm'], 2);
 					$addup += $grossprice;
 					if($counter == count($value['nodes'])) {
 						$html .= '<tr class="lastrow">';
