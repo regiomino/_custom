@@ -206,24 +206,46 @@ function regiomino_admin_menu() {
     'type' => MENU_LOCAL_ACTION,
 		'weight' => 4,
   );
-	$items['updatestock'] = array(
-    'page callback' => 'regiomino_admin_update_stock',
+	$items['updateofferdata'] = array(
+    'page callback' => 'regiomino_admin_update_offerdata',
     'access callback' => 'regiomino_admin_user_is_seller',
 	);
 	return $items;
 }
 
-function regiomino_admin_update_stock($nid = 0, $stock = 0) {
+function regiomino_admin_update_offerdata($nid = 0, $amount = 0, $field = '') {
 
-	if($nid == 0 && $stock == 0) {
+	if($nid == 0 && $amount == 0 && $field == '') {
 		$nid = $_POST['nid'];
-		$stock = $_POST['stock'];
+		$amount = $_POST['amount'];
+		$field = $_POST['field'];
 	}
 	
 	$nodeobject = node_load($nid);
-	$nodeobject->field_stock[LANGUAGE_NONE][0]['value'] = $stock;
-	node_save($nodeobject);
 	
+	global $user;
+	if($nodeobject->uid == $user->uid) {
+		switch($field) {
+			case 'field_packingunit_first':
+				$nodeobject->field_packingunit[LANGUAGE_NONE][0]['first'] = $amount;
+				node_save($nodeobject);
+				$newnid = $nid;
+				break;
+			case 'field_packingunit_second':
+				$nodeobject->field_packingunit[LANGUAGE_NONE][0]['second'] = $amount;
+				node_save($nodeobject);
+				$newnid = $nid;
+				break;
+			default:
+				$nodeobject->{$field}[LANGUAGE_NONE][0]['value'] = $amount;
+				node_save($nodeobject);
+				$newnid = $nid;
+				break;
+		}
+	}
+	
+	echo $newnid;
+	//echo 1111;
 }
 
 function regiomino_admin_manage_offers_edit_validate($form, &$form_state) {

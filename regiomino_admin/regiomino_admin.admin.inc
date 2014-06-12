@@ -1096,7 +1096,7 @@ function regiomino_admin_manage_offers_active($form, &$form_state) {
 			),
 		),
 		'field_stock' => array(
-			'data' => 'Bestand',
+			'data' => 'Produktbestand',
 			'type' => 'field',
 			'specifier' => array(
 				'field' => 'field_stock',
@@ -1124,10 +1124,10 @@ function regiomino_admin_manage_offers_active($form, &$form_state) {
 	$options = array();
 	foreach($allactiveoffers as $nid => $activeoffer) {
 		$options[$nid] = array(
-				'nid' => array('data' => $activeoffer->nid, 'specifier' => 'nid'),
+				'nid' => array('data' => $activeoffer->nid, 'specifier' => 'nid', 'class' => 'nid' . $activeoffer->nid),
 				'title' => array('data' => l($activeoffer->title, 'node/' . $activeoffer->nid), 'specifier' => 'title'),
-				'field_packingunit' => $activeoffer->field_packingunit[LANGUAGE_NONE][0]['first'] . ' ' . t($activeoffer->field_packingunit[LANGUAGE_NONE][0]['second']),
-				'field_stock' => l($activeoffer->field_stock[LANGUAGE_NONE][0]['value'], 'javascript:', array('external' => TRUE, 'attributes' => array('class' => array('editablefield', 'nid' . $activeoffer->nid, 'stock'), 'data-value' => $activeoffer->field_stock[LANGUAGE_NONE][0]['value']))),
+				'field_packingunit' => l($activeoffer->field_packingunit[LANGUAGE_NONE][0]['first'], 'javascript:', array('external' => TRUE, 'attributes' => array('class' => array('editablefield', 'nid' . $activeoffer->nid, 'field_packingunit_first'), 'data-value' => $activeoffer->field_packingunit[LANGUAGE_NONE][0]['first']))) . ' ' . t($activeoffer->field_packingunit[LANGUAGE_NONE][0]['second']),
+				'field_stock' => l($activeoffer->field_stock[LANGUAGE_NONE][0]['value'], 'javascript:', array('external' => TRUE, 'attributes' => array('class' => array('editablefield', 'nid' . $activeoffer->nid, 'field_stock'), 'data-value' => $activeoffer->field_stock[LANGUAGE_NONE][0]['value']))),
 				'edit' => l('Datensatz bearbeiten', 'admin/offers/edit/' . $nid, array('query' => drupal_get_destination())),
 		);
 	}
