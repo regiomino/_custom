@@ -206,7 +206,24 @@ function regiomino_admin_menu() {
     'type' => MENU_LOCAL_ACTION,
 		'weight' => 4,
   );
+	$items['updatestock'] = array(
+    'page callback' => 'regiomino_admin_update_stock',
+    'access callback' => 'regiomino_admin_user_is_seller',
+	);
 	return $items;
+}
+
+function regiomino_admin_update_stock($nid = 0, $stock = 0) {
+
+	if($nid == 0 && $stock == 0) {
+		$nid = $_POST['nid'];
+		$stock = $_POST['stock'];
+	}
+	
+	$nodeobject = node_load($nid);
+	$nodeobject->field_stock[LANGUAGE_NONE][0]['value'] = $stock;
+	node_save($nodeobject);
+	
 }
 
 function regiomino_admin_manage_offers_edit_validate($form, &$form_state) {

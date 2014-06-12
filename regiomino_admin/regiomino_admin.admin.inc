@@ -1088,11 +1088,19 @@ function regiomino_admin_manage_offers_active($form, &$form_state) {
 			'specifier' => 'title',
 		),
 		'field_packingunit' => array(
-			'data' => 'Verkaufseinheit',
+			'data' => 'Produkteinheit',
 			'type' => 'field',
 			'specifier' => array(
 				'field' => 'field_packingunit',
 				'column' => 'first',
+			),
+		),
+		'field_stock' => array(
+			'data' => 'Bestand',
+			'type' => 'field',
+			'specifier' => array(
+				'field' => 'field_stock',
+				'column' => 'value',
 			),
 		),
 		'edit' => 'Bearbeiten',
@@ -1105,8 +1113,6 @@ function regiomino_admin_manage_offers_active($form, &$form_state) {
 		->propertyCondition('uid', $user->uid)
 		->propertyCondition('status', 1)
 		->propertyCondition('soldout', 0)
-		//->propertyOrderBy('changed', 'DESC')
-		//->fieldOrderBy('field_duration', 'value', 'ASC')
 		->tableSort($header)
 		->pager(50)
 		->execute();
@@ -1121,6 +1127,7 @@ function regiomino_admin_manage_offers_active($form, &$form_state) {
 				'nid' => array('data' => $activeoffer->nid, 'specifier' => 'nid'),
 				'title' => array('data' => l($activeoffer->title, 'node/' . $activeoffer->nid), 'specifier' => 'title'),
 				'field_packingunit' => $activeoffer->field_packingunit[LANGUAGE_NONE][0]['first'] . ' ' . t($activeoffer->field_packingunit[LANGUAGE_NONE][0]['second']),
+				'field_stock' => l($activeoffer->field_stock[LANGUAGE_NONE][0]['value'], 'javascript:', array('external' => TRUE, 'attributes' => array('class' => array('editablefield', 'nid' . $activeoffer->nid, 'stock'), 'data-value' => $activeoffer->field_stock[LANGUAGE_NONE][0]['value']))),
 				'edit' => l('Datensatz bearbeiten', 'admin/offers/edit/' . $nid, array('query' => drupal_get_destination())),
 		);
 	}
