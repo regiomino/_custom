@@ -215,37 +215,189 @@ function regiomino_admin_menu() {
 
 function regiomino_admin_update_offerdata($nid = 0, $amount = 0, $field = '') {
 
+	//Make it possible to use this function with ajax post data as well
 	if($nid == 0 && $amount == 0 && $field == '') {
 		$nid = $_POST['nid'];
 		$amount = $_POST['amount'];
 		$field = $_POST['field'];
 	}
 	
+	//Load given node
 	$nodeobject = node_load($nid);
-	
+	//Create a variable $newnid that will be returned to the caller. This is useful in case the nid changes when altering the node.
+	$newnid = $nid;
+				
+	//Check if user actually owns the node he's trying to alter
 	global $user;
 	if($nodeobject->uid == $user->uid) {
 		switch($field) {
+		
 			case 'field_packingunit_first':
 				$nodeobject->field_packingunit[LANGUAGE_NONE][0]['first'] = $amount;
 				node_save($nodeobject);
-				$newnid = $nid;
 				break;
+				
 			case 'field_packingunit_second':
 				$nodeobject->field_packingunit[LANGUAGE_NONE][0]['second'] = $amount;
 				node_save($nodeobject);
-				$newnid = $nid;
 				break;
+				
+			case 'field_tu_revenue_private':
+			
+				//Create new node from old one
+				$duplicatenode = clone $nodeobject;
+				$duplicatenode->nid = NULL;
+				$duplicatenode->vid = NULL;
+				$duplicatenode->tnid = NULL;
+				$duplicatenode->status = 1;
+				$dateformat = explode('+', date('c', mktime(0, 0, 0, date("m"), date("d")+7, date("Y"))));
+				$duplicatenode->field_duration[LANGUAGE_NONE][0] = array(
+					'value' => $dateformat[0],
+					'timezone' => 'Europe/Berlin',
+					'timezone_db' => 'Europe/Berlin',
+					'date_type' => 'date',
+				);
+				node_save($duplicatenode);
+				$newnid = $duplicatenode->nid;
+				
+				//End old node
+				$nodeobject->soldout = 1;
+				$dateformat = explode('+', date('c', mktime(0, 0, 0, date("m"), date("d"), date("Y"))));
+				$nodeobject->field_duration[LANGUAGE_NONE][0] = array(
+					'value' => $dateformat[0],
+					'timezone' => 'Europe/Berlin',
+					'timezone_db' => 'Europe/Berlin',
+					'date_type' => 'date',
+				);
+				node_save($nodeobject);
+				
+				
+				
+				//Now alter new node
+				$fcloadarray = array();
+				if(isset($duplicatenode->field_tradingunits[LANGUAGE_NONE])) {
+					foreach($duplicatenode->field_tradingunits[LANGUAGE_NONE] as $key => $value) {
+						$fcloadarray[] = $value['value'];
+					}
+				}
+				//Load all tradingunits stored in the node
+				$fcis = entity_load('field_collection_item', $fcloadarray);
+				
+				//Filter out prices that do not belong to the customertype (private or commercial)
+				if(isset($fcis) && !empty($fcis)) {
+					foreach($fcis as $key=>$value) {
+						if(isset($value->field_tu_customertype[LANGUAGE_NONE][0]['value']) && $value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != 'private') unset($fcis[$key]);
+					}
+				}
+				$tradingunitqty = 1;
+				$tradingunitrevenue = floatval(str_replace(',', '.', $amount));
+				//If prices are left, continue here.
+				if(isset($fcis) && !empty($fcis)) {
+					//Sort DESC by tradingunit size without key preservation
+					usort($fcis, "regiomino_offer_sort_tradingunits");			
+
+					//Validate if the new values are allowed in combination with the old ones
+					$break = FALSE;
+					//Do the validation here
+					if($break) break;
+					
+					//Delete first item if exists
+					$tradingunitqty = $fcis[0]->field_tu_size[LANGUAGE_NONE][0]['value'];
+					foreach($duplicatenode->field_tradingunits[LANGUAGE_NONE] as $fcikey=>$fcivalue) {
+						if($fcivalue['value'] == $fcis[0]->item_id) {
+							unset($duplicatenode->field_tradingunits[LANGUAGE_NONE][$fcikey]);
+							node_save($duplicatenode);
+							entity_delete_multiple('field_collection_item', array($fcis[0]->item_id));
+						}
+					}
+				}
+				
+				regiomino_offer_add_tradingunit($duplicatenode, $tradingunitqty, $tradingunitrevenue, 'private');
+				
+				break;
+				
+			case 'field_tu_revenue_commercial':
+			
+				//Create new node from old one
+				$duplicatenode = clone $nodeobject;
+				$duplicatenode->nid = NULL;
+				$duplicatenode->vid = NULL;
+				$duplicatenode->tnid = NULL;
+				$duplicatenode->status = 1;
+				$dateformat = explode('+', date('c', mktime(0, 0, 0, date("m"), date("d")+7, date("Y"))));
+				$duplicatenode->field_duration[LANGUAGE_NONE][0] = array(
+					'value' => $dateformat[0],
+					'timezone' => 'Europe/Berlin',
+					'timezone_db' => 'Europe/Berlin',
+					'date_type' => 'date',
+				);
+				node_save($duplicatenode);
+				$newnid = $duplicatenode->nid;
+				
+				//End old node
+				$nodeobject->soldout = 1;
+				$dateformat = explode('+', date('c', mktime(0, 0, 0, date("m"), date("d"), date("Y"))));
+				$nodeobject->field_duration[LANGUAGE_NONE][0] = array(
+					'value' => $dateformat[0],
+					'timezone' => 'Europe/Berlin',
+					'timezone_db' => 'Europe/Berlin',
+					'date_type' => 'date',
+				);
+				node_save($nodeobject);
+				
+				
+				
+				//Now alter new node
+				$fcloadarray = array();
+				if(isset($duplicatenode->field_tradingunits[LANGUAGE_NONE])) {
+					foreach($duplicatenode->field_tradingunits[LANGUAGE_NONE] as $key => $value) {
+						$fcloadarray[] = $value['value'];
+					}
+				}
+				//Load all tradingunits stored in the node
+				$fcis = entity_load('field_collection_item', $fcloadarray);
+				
+				//Filter out prices that do not belong to the customertype (private or commercial)
+				if(isset($fcis) && !empty($fcis)) {
+					foreach($fcis as $key=>$value) {
+						if(isset($value->field_tu_customertype[LANGUAGE_NONE][0]['value']) && $value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != 'commercial') unset($fcis[$key]);
+					}
+				}
+				$tradingunitqty = 1;
+				$tradingunitrevenue = floatval(str_replace(',', '.', $amount));
+				//If prices are left, continue here.
+				if(isset($fcis) && !empty($fcis)) {
+					//Sort DESC by tradingunit size without key preservation
+					usort($fcis, "regiomino_offer_sort_tradingunits");			
+
+					//Validate if the new values are allowed in combination with the old ones
+					$break = FALSE;
+					//Do the validation here
+					if($break) break;
+					
+					//Delete first item if exists
+					$tradingunitqty = $fcis[0]->field_tu_size[LANGUAGE_NONE][0]['value'];
+					foreach($duplicatenode->field_tradingunits[LANGUAGE_NONE] as $fcikey=>$fcivalue) {
+						if($fcivalue['value'] == $fcis[0]->item_id) {
+							unset($duplicatenode->field_tradingunits[LANGUAGE_NONE][$fcikey]);
+							node_save($duplicatenode);
+							entity_delete_multiple('field_collection_item', array($fcis[0]->item_id));
+						}
+					}
+				}
+				
+				regiomino_offer_add_tradingunit($duplicatenode, $tradingunitqty, $tradingunitrevenue, 'commercial');
+				
+				break;
+				
 			default:
 				$nodeobject->{$field}[LANGUAGE_NONE][0]['value'] = $amount;
 				node_save($nodeobject);
-				$newnid = $nid;
 				break;
 		}
 	}
 	
 	echo $newnid;
-	//echo 1111;
 }
 
 function regiomino_admin_manage_offers_edit_validate($form, &$form_state) {

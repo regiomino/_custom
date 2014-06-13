@@ -1103,6 +1103,8 @@ function regiomino_admin_manage_offers_active($form, &$form_state) {
 				'column' => 'value',
 			),
 		),
+		'field_tu_revenue_private' => 'Netto-Erlös (privat)',
+		'field_tu_revenue_commercial' => 'Netto-Erlös (gewerblich)',
 		'edit' => 'Bearbeiten',
 	);
 	
@@ -1120,15 +1122,72 @@ function regiomino_admin_manage_offers_active($form, &$form_state) {
 	$allactiveoffers = entity_load('node', array_keys($tmp['node']));
 	
 	// $form = array();
-
+			
 	$options = array();
 	foreach($allactiveoffers as $nid => $activeoffer) {
+	
+	
+	
+	
+		$fcloadarray = array();
+		if(isset($activeoffer->field_tradingunits[LANGUAGE_NONE])) {
+			foreach($activeoffer->field_tradingunits[LANGUAGE_NONE] as $key => $value) {
+				$fcloadarray[] = $value['value'];
+			}
+		}
+		//Load all tradingunits stored in the node
+		$fcis_commercial = $fcis_private = entity_load('field_collection_item', $fcloadarray);
+		
+		//Filter out prices that do not belong to the customertype (private or commercial)
+		if(isset($fcis_commercial) && !empty($fcis_commercial)) {
+			foreach($fcis_commercial as $key=>$value) {
+				if(isset($value->field_tu_customertype[LANGUAGE_NONE][0]['value']) && $value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != 'commercial') unset($fcis_commercial[$key]);
+			}
+		}
+		//If prices are left, continue here.
+		if(isset($fcis_commercial) && !empty($fcis_commercial)) {
+			//Sort DESC by tradingunit size without key preservation
+			usort($fcis_commercial, "regiomino_offer_sort_tradingunits");
+		}
+		
+		//Filter out prices that do not belong to the customertype (private or commercial)
+		if(isset($fcis_private) && !empty($fcis_private)) {
+			foreach($fcis_private as $key=>$value) {
+				if(isset($value->field_tu_customertype[LANGUAGE_NONE][0]['value']) && $value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != 'private') unset($fcis_private[$key]);
+			}
+		}
+		//If prices are left, continue here. Otherwise NULL is returned
+		if(isset($fcis_private) && !empty($fcis_private)) {
+			//Sort DESC by tradingunit size without key preservation
+			usort($fcis_private, "regiomino_offer_sort_tradingunits");
+		}
+		
+		if(isset($fcis_commercial[0]->field_tu_size[LANGUAGE_NONE][0]['value']) && !empty($fcis_commercial[0]->field_tu_size[LANGUAGE_NONE][0]['value'])) {
+			$field_tu_size_commercial_default = $fcis_commercial[0]->field_tu_size[LANGUAGE_NONE][0]['value'];
+			$field_tu_revenue_commercial_default = number_format($fcis_commercial[0]->field_tu_revenue[LANGUAGE_NONE][0]['value'], 2, ",", "");
+		}
+		else {
+			$field_tu_size_commercial_default = 1;
+			$field_tu_revenue_commercial_default = '-';
+		}
+		
+		if(isset($fcis_private[0]->field_tu_size[LANGUAGE_NONE][0]['value']) && !empty($fcis_private[0]->field_tu_size[LANGUAGE_NONE][0]['value'])) {
+			$field_tu_size_private_default = $fcis_private[0]->field_tu_size[LANGUAGE_NONE][0]['value'];
+			$field_tu_revenue_private_default = number_format($fcis_private[0]->field_tu_revenue[LANGUAGE_NONE][0]['value'], 2, ",", "");
+		}
+		else {
+			$field_tu_size_private_default = 1;
+			$field_tu_revenue_private_default = '-';
+		}
+	
 		$options[$nid] = array(
 				'nid' => array('data' => $activeoffer->nid, 'specifier' => 'nid', 'class' => 'nid' . $activeoffer->nid),
 				'title' => array('data' => l($activeoffer->title, 'node/' . $activeoffer->nid), 'specifier' => 'title'),
 				'field_packingunit' => l($activeoffer->field_packingunit[LANGUAGE_NONE][0]['first'], 'javascript:', array('external' => TRUE, 'attributes' => array('class' => array('editablefield', 'nid' . $activeoffer->nid, 'field_packingunit_first'), 'data-value' => $activeoffer->field_packingunit[LANGUAGE_NONE][0]['first']))) . ' ' . t($activeoffer->field_packingunit[LANGUAGE_NONE][0]['second']),
 				'field_stock' => l($activeoffer->field_stock[LANGUAGE_NONE][0]['value'], 'javascript:', array('external' => TRUE, 'attributes' => array('class' => array('editablefield', 'nid' . $activeoffer->nid, 'field_stock'), 'data-value' => $activeoffer->field_stock[LANGUAGE_NONE][0]['value']))),
-				'edit' => l('Datensatz bearbeiten', 'admin/offers/edit/' . $nid, array('query' => drupal_get_destination())),
+				'field_tu_revenue_private' => l($field_tu_revenue_private_default, 'javascript:', array('external' => TRUE, 'attributes' => array('class' => array('editablefield', 'nid' . $activeoffer->nid, 'field_tu_revenue_private'), 'data-value' => number_format($fcis_private[0]->field_tu_revenue[LANGUAGE_NONE][0]['value'], 2, ",", "")))) . " € für " . number_format($field_tu_size_private_default) . " Produkteinheit(en)",
+				'field_tu_revenue_commercial' => l($field_tu_revenue_commercial_default, 'javascript:', array('external' => TRUE, 'attributes' => array('class' => array('editablefield', 'nid' . $activeoffer->nid, 'field_tu_revenue_commercial'), 'data-value' => number_format($fcis_commercial[0]->field_tu_revenue[LANGUAGE_NONE][0]['value'], 2, ",", "")))) . " € für " . number_format($field_tu_size_commercial_default) . " Produkteinheit(en)",
+				'edit' => l('Datensatz bearbeiten', 'admin/offers/edit/' . $nid, array('query' => drupal_get_destination(), 'attributes' => array('class' => array('nid' . $activeoffer->nid)))),
 		);
 	}
   $form['submit_clone'] = array(
