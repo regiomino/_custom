@@ -916,6 +916,7 @@ function theme_offer_thumb_upload($variables) {
 
 function regiomino_admin_allorders_access() {
 	global $user;
+	if(regiomino_admin_user_is_admin()) return TRUE;
 	$account = user_load($user->uid);
 	$return = FALSE;
 	in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
@@ -925,6 +926,7 @@ function regiomino_admin_allorders_access() {
 
 function regiomino_admin_alloffers_access() {
 	global $user;
+	if(regiomino_admin_user_is_admin()) return TRUE;
 	$account = user_load($user->uid);
 	$return = FALSE;
 	in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
@@ -934,6 +936,7 @@ function regiomino_admin_alloffers_access() {
 
 function regiomino_admin_offersmissingcommercial_access() {
 	global $user;
+	if(regiomino_admin_user_is_admin()) return TRUE;
 	$account = user_load($user->uid);
 	$return = FALSE;
 	in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
