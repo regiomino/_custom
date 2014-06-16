@@ -918,8 +918,8 @@ function regiomino_admin_allorders_access() {
 	global $user;
 	$account = user_load($user->uid);
 	$return = FALSE;
-	return in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
-	return in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
+	in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
+	in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
 	if($return) return $return;
 }
 
@@ -927,8 +927,8 @@ function regiomino_admin_alloffers_access() {
 	global $user;
 	$account = user_load($user->uid);
 	$return = FALSE;
-	return in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
-	return in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
+	in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
+	in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
 	if($return) return $return;
 }
 
@@ -936,8 +936,8 @@ function regiomino_admin_offersmissingcommercial_access() {
 	global $user;
 	$account = user_load($user->uid);
 	$return = FALSE;
-	return in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
-	return in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
+	in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
+	in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
 	if($return) return $return;
 }
 
