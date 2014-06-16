@@ -23,6 +23,24 @@ function regiomino_admin_menu() {
     'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
     'file path' => drupal_get_path('module', 'regiomino_admin'),
   );
+	$items['admin/support/alloffers'] = array(
+    'title' => 'Alle Angebote',
+    'page callback' => 'regiomino_admin_alloffers',
+    'access callback' => 'regiomino_admin_alloffers_access',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 2,
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+  );
+	$items['admin/support/offersmissingcommercial'] = array(
+    'title' => 'Keine Gewerbegebinde',
+    'page callback' => 'regiomino_admin_offersmissingcommercial',
+    'access callback' => 'regiomino_admin_offersmissingcommercial_access',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 2,
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+  );
   $items['admin/statistics'] = array(
     'title' => t('Statistics'),
     'page callback' => 'regiomino_admin_sales',
@@ -906,6 +924,26 @@ function regiomino_admin_allorders_access() {
 	if($return) return $return;
 }
 
+function regiomino_admin_alloffers_access() {
+	global $user;
+	$account = user_load($user->uid);
+	$return = FALSE;
+	return in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
+	if($return) return $return;
+	return in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
+	if($return) return $return;
+}
+
+function regiomino_admin_offersmissingcommercial_access() {
+	global $user;
+	$account = user_load($user->uid);
+	$return = FALSE;
+	return in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
+	if($return) return $return;
+	return in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
+	if($return) return $return;
+}
+
 function regiomino_admin_paymenttasks_access() {
 	global $user;
 	$account = user_load($user->uid);
@@ -1139,6 +1177,41 @@ function regiomino_admin_allorders_filterform($form, &$form_state) {
 		'#default_value' => $queryparams['frequency'],
 		'#empty_option' => 'Alle',
 	);
+	$form['allordersfilter']['submit'] = array(
+		'#value' => t('Filter'),
+		'#type' => 'submit',
+	);
+	return $form;
+}
+
+function regiomino_admin_alloffers_filterform($form, &$form_state) {
+	$queryparams = drupal_get_query_parameters();
+	$form['#method'] = 'get';
+	
+	$form['alloffersfilter']['publish_status'] = array(
+		'#type' => 'select',
+		'#options' => array(
+			'1' => 'Veröffentlicht',
+			'0' => 'Unveröffentlicht',
+		),
+		'#multiple' => TRUE,
+		'#size' => 2,
+		'#default_value' => 1,
+	);
+	if(isset($queryparams['publish_status']) && !empty($queryparams['publish_status'])) $form['alloffersfilter']['publish_status']['#default_value'] = $queryparams['publish_status'];
+	
+	$form['alloffersfilter']['sale_status'] = array(
+		'#type' => 'select',
+		'#options' => array(
+			'0' => 'Aktiv',
+			'1' => 'Beendet',
+		),
+		'#multiple' => TRUE,
+		'#size' => 2,
+		'#default_value' => 0,
+	);
+	if(isset($queryparams['sale_status']) && !empty($queryparams['sale_status'])) $form['alloffersfilter']['sale_status']['#default_value'] = $queryparams['sale_status'];
+	
 	$form['allordersfilter']['submit'] = array(
 		'#value' => t('Filter'),
 		'#type' => 'submit',

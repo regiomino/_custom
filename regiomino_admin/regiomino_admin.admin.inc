@@ -1611,6 +1611,7 @@ function regiomino_admin_incomingorders($displaytype = 'grouped', $timerange = '
 	}
 }
 
+
 function regiomino_admin_allorders() {
 
 	$queryparams = drupal_get_query_parameters();
@@ -1823,6 +1824,290 @@ function regiomino_admin_allorders() {
 	}
 	
 	$output = theme('table', array('header' => $header, 'rows' => $rows));
+	
+	return render($form) . $output . theme('pager');
+}
+
+function regiomino_admin_offersmissingcommercial() {
+
+	$header = array(
+		'nid' => array(
+			'data' => 'Art.#',
+			'type' => 'property',
+			'specifier' => 'nid',
+			'sort' => 'desc',
+		),
+		'title' => array(
+			'data' => 'Titel',
+			'type' => 'property',
+			'specifier' => 'title',
+		),
+		'uid' => array(
+			'data' => 'Verkäufer (Teilnehmernr.)',
+			'type' => 'property',
+			'specifier' => 'uid',
+		),
+		'field_packingunit' => array(
+			'data' => 'Einheit',
+			'type' => 'field',
+			'specifier' => array(
+				'field' => 'field_packingunit',
+				'column' => 'first',
+			),
+		),
+		'field_tu_revenue_private' => 'Netto-Erlös (privat)',
+		'field_tu_revenue_commercial' => 'Netto-Erlös (gewerblich)',
+		'edit' => 'Aktionen',
+	);
+	
+	$query = new EntityFieldQuery;
+	$tmp = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'offer')
+		->propertyCondition('status', 1)
+		->propertyCondition('soldout', 0)
+		->execute();
+	$allactiveoffers = entity_load('node', array_keys($tmp['node']));
+	$nocommprice = array();
+	foreach($allactiveoffers as $nid => $activeoffer) {
+		$fcloadarray = array();
+		if(isset($activeoffer->field_tradingunits[LANGUAGE_NONE])) {
+			foreach($activeoffer->field_tradingunits[LANGUAGE_NONE] as $key => $value) {
+				$fcloadarray[] = $value['value'];
+			}
+		}
+		//Load all tradingunits stored in the node
+		$fcis_commercial = entity_load('field_collection_item', $fcloadarray);
+		
+		//Filter out prices that do not belong to the customertype (private or commercial)
+		if(isset($fcis_commercial) && !empty($fcis_commercial)) {
+			foreach($fcis_commercial as $key=>$value) {
+				if(isset($value->field_tu_customertype[LANGUAGE_NONE][0]['value']) && $value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != 'commercial') unset($fcis_commercial[$key]);
+			}
+		}
+		//If prices are left, continue here.
+		if(!isset($fcis_commercial) || empty($fcis_commercial)) {
+			//Sort DESC by tradingunit size without key preservation
+			$nocommprice[] = $nid;
+		}
+	}
+
+	$query = new EntityFieldQuery;
+	$query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('offer'))
+		->propertyCondition('nid', $nocommprice);
+	$tmp = $query
+		->tableSort($header)
+		->pager(50)
+		->execute();
+	
+	$allactiveoffers = entity_load('node', array_keys($tmp['node']));
+	
+	$options = array();
+	foreach($allactiveoffers as $nid => $activeoffer) {
+
+		$fcloadarray = array();
+		if(isset($activeoffer->field_tradingunits[LANGUAGE_NONE])) {
+			foreach($activeoffer->field_tradingunits[LANGUAGE_NONE] as $key => $value) {
+				$fcloadarray[] = $value['value'];
+			}
+		}
+		//Load all tradingunits stored in the node
+		$fcis_commercial = $fcis_private = entity_load('field_collection_item', $fcloadarray);
+		
+		//Filter out prices that do not belong to the customertype (private or commercial)
+		if(isset($fcis_commercial) && !empty($fcis_commercial)) {
+			foreach($fcis_commercial as $key=>$value) {
+				if(isset($value->field_tu_customertype[LANGUAGE_NONE][0]['value']) && $value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != 'commercial') unset($fcis_commercial[$key]);
+			}
+		}
+		//If prices are left, continue here.
+		if(isset($fcis_commercial) && !empty($fcis_commercial)) {
+			//Sort DESC by tradingunit size without key preservation
+			usort($fcis_commercial, "regiomino_offer_sort_tradingunits");
+		}
+		
+		//Filter out prices that do not belong to the customertype (private or commercial)
+		if(isset($fcis_private) && !empty($fcis_private)) {
+			foreach($fcis_private as $key=>$value) {
+				if(isset($value->field_tu_customertype[LANGUAGE_NONE][0]['value']) && $value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != 'private') unset($fcis_private[$key]);
+			}
+		}
+		//If prices are left, continue here. Otherwise NULL is returned
+		if(isset($fcis_private) && !empty($fcis_private)) {
+			//Sort DESC by tradingunit size without key preservation
+			usort($fcis_private, "regiomino_offer_sort_tradingunits");
+		}
+		
+		if(isset($fcis_commercial[0]->field_tu_size[LANGUAGE_NONE][0]['value']) && !empty($fcis_commercial[0]->field_tu_size[LANGUAGE_NONE][0]['value'])) {
+			$field_tu_size_commercial_default = $fcis_commercial[0]->field_tu_size[LANGUAGE_NONE][0]['value'];
+			$field_tu_revenue_commercial_default = number_format($fcis_commercial[0]->field_tu_revenue[LANGUAGE_NONE][0]['value'], 2, ",", "");
+		}
+		else {
+			$field_tu_size_commercial_default = 1;
+			$field_tu_revenue_commercial_default = '-';
+		}
+		
+		if(isset($fcis_private[0]->field_tu_size[LANGUAGE_NONE][0]['value']) && !empty($fcis_private[0]->field_tu_size[LANGUAGE_NONE][0]['value'])) {
+			$field_tu_size_private_default = $fcis_private[0]->field_tu_size[LANGUAGE_NONE][0]['value'];
+			$field_tu_revenue_private_default = number_format($fcis_private[0]->field_tu_revenue[LANGUAGE_NONE][0]['value'], 2, ",", "");
+		}
+		else {
+			$field_tu_size_private_default = 1;
+			$field_tu_revenue_private_default = '-';
+		}
+		
+		$sellerprofile = node_load(user_load($activeoffer->uid)->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+	
+		$options[$nid] = array(
+				'nid' => array('data' => $activeoffer->nid, 'specifier' => 'nid', 'class' => 'nid' . $activeoffer->nid),
+				'title' => array('data' => l($activeoffer->title, 'node/' . $activeoffer->nid), 'specifier' => 'title'),
+				'uid' => array('data' => l($sellerprofile->title . ' (' . $activeoffer->uid . ')', 'node/' . $sellerprofile->nid), 'specifier' => 'uid'),
+				'field_packingunit' => $activeoffer->field_packingunit[LANGUAGE_NONE][0]['first'] . ' ' . t($activeoffer->field_packingunit[LANGUAGE_NONE][0]['second']),
+				'field_tu_revenue_private' => $field_tu_revenue_private_default . " € / " . number_format($field_tu_size_private_default) . " Einheit(en)",
+				'field_tu_revenue_commercial' => $field_tu_revenue_commercial_default . " € / " . number_format($field_tu_size_commercial_default) . " Einheit(en)",
+				'edit' => l('Schattenlogin beim Verkäufer', 'user/' . $user->uid . '/shadow/' . $activeoffer->uid, array('query' => array('destination' => 'admin/offers'))),
+		);
+	}
+	
+	$output = theme('table', array('header' => $header, 'rows' => $options));
+	
+	return $output . theme('pager');
+}
+
+function regiomino_admin_alloffers() {
+
+	global $user;
+
+	$queryparams = drupal_get_query_parameters();
+
+	$form = drupal_get_form('regiomino_admin_alloffers_filterform');
+
+	$header = array(
+		'nid' => array(
+			'data' => 'Art.#',
+			'type' => 'property',
+			'specifier' => 'nid',
+			'sort' => 'desc',
+		),
+		'title' => array(
+			'data' => 'Titel',
+			'type' => 'property',
+			'specifier' => 'title',
+		),
+		'uid' => array(
+			'data' => 'Verkäufer (Teilnehmernr.)',
+			'type' => 'property',
+			'specifier' => 'uid',
+		),
+		'field_packingunit' => array(
+			'data' => 'Einheit',
+			'type' => 'field',
+			'specifier' => array(
+				'field' => 'field_packingunit',
+				'column' => 'first',
+			),
+		),
+		'field_tu_revenue_private' => 'Netto-Erlös (privat)',
+		'field_tu_revenue_commercial' => 'Netto-Erlös (gewerblich)',
+		'edit' => 'Aktionen',
+	);
+	
+	$query = new EntityFieldQuery;
+	$query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', array('offer'));
+		
+	if(isset($queryparams['publish_status']) && !empty($queryparams['publish_status'])) {
+		$query->propertyCondition('status', $queryparams['publish_status']);
+	}
+	else {
+		$query->propertyCondition('status', 1);
+	}
+	
+	if(isset($queryparams['sale_status']) && !empty($queryparams['sale_status'])) {
+		$query->propertyCondition('soldout', $queryparams['sale_status']);
+	}
+	else {
+		$query->propertyCondition('soldout', 0);
+	}
+	
+	$tmp = $query
+		->tableSort($header)
+		->pager(50)
+		->execute();
+	
+	$allactiveoffers = entity_load('node', array_keys($tmp['node']));
+	
+	$options = array();
+	foreach($allactiveoffers as $nid => $activeoffer) {
+
+		$fcloadarray = array();
+		if(isset($activeoffer->field_tradingunits[LANGUAGE_NONE])) {
+			foreach($activeoffer->field_tradingunits[LANGUAGE_NONE] as $key => $value) {
+				$fcloadarray[] = $value['value'];
+			}
+		}
+		//Load all tradingunits stored in the node
+		$fcis_commercial = $fcis_private = entity_load('field_collection_item', $fcloadarray);
+		
+		//Filter out prices that do not belong to the customertype (private or commercial)
+		if(isset($fcis_commercial) && !empty($fcis_commercial)) {
+			foreach($fcis_commercial as $key=>$value) {
+				if(isset($value->field_tu_customertype[LANGUAGE_NONE][0]['value']) && $value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != 'commercial') unset($fcis_commercial[$key]);
+			}
+		}
+		//If prices are left, continue here.
+		if(isset($fcis_commercial) && !empty($fcis_commercial)) {
+			//Sort DESC by tradingunit size without key preservation
+			usort($fcis_commercial, "regiomino_offer_sort_tradingunits");
+		}
+		
+		//Filter out prices that do not belong to the customertype (private or commercial)
+		if(isset($fcis_private) && !empty($fcis_private)) {
+			foreach($fcis_private as $key=>$value) {
+				if(isset($value->field_tu_customertype[LANGUAGE_NONE][0]['value']) && $value->field_tu_customertype[LANGUAGE_NONE][0]['value'] != 'private') unset($fcis_private[$key]);
+			}
+		}
+		//If prices are left, continue here. Otherwise NULL is returned
+		if(isset($fcis_private) && !empty($fcis_private)) {
+			//Sort DESC by tradingunit size without key preservation
+			usort($fcis_private, "regiomino_offer_sort_tradingunits");
+		}
+		
+		if(isset($fcis_commercial[0]->field_tu_size[LANGUAGE_NONE][0]['value']) && !empty($fcis_commercial[0]->field_tu_size[LANGUAGE_NONE][0]['value'])) {
+			$field_tu_size_commercial_default = $fcis_commercial[0]->field_tu_size[LANGUAGE_NONE][0]['value'];
+			$field_tu_revenue_commercial_default = number_format($fcis_commercial[0]->field_tu_revenue[LANGUAGE_NONE][0]['value'], 2, ",", "");
+		}
+		else {
+			$field_tu_size_commercial_default = 1;
+			$field_tu_revenue_commercial_default = '-';
+		}
+		
+		if(isset($fcis_private[0]->field_tu_size[LANGUAGE_NONE][0]['value']) && !empty($fcis_private[0]->field_tu_size[LANGUAGE_NONE][0]['value'])) {
+			$field_tu_size_private_default = $fcis_private[0]->field_tu_size[LANGUAGE_NONE][0]['value'];
+			$field_tu_revenue_private_default = number_format($fcis_private[0]->field_tu_revenue[LANGUAGE_NONE][0]['value'], 2, ",", "");
+		}
+		else {
+			$field_tu_size_private_default = 1;
+			$field_tu_revenue_private_default = '-';
+		}
+		
+		$sellerprofile = node_load(user_load($activeoffer->uid)->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+	
+		$options[$nid] = array(
+				'nid' => array('data' => $activeoffer->nid, 'specifier' => 'nid', 'class' => 'nid' . $activeoffer->nid),
+				'title' => array('data' => l($activeoffer->title, 'node/' . $activeoffer->nid), 'specifier' => 'title'),
+				'uid' => array('data' => l($sellerprofile->title . ' (' . $activeoffer->uid . ')', 'node/' . $sellerprofile->nid), 'specifier' => 'uid'),
+				'field_packingunit' => $activeoffer->field_packingunit[LANGUAGE_NONE][0]['first'] . ' ' . t($activeoffer->field_packingunit[LANGUAGE_NONE][0]['second']),
+				'field_tu_revenue_private' => $field_tu_revenue_private_default . " € / " . number_format($field_tu_size_private_default) . " Einheit(en)",
+				'field_tu_revenue_commercial' => $field_tu_revenue_commercial_default . " € / " . number_format($field_tu_size_commercial_default) . " Einheit(en)",
+				'edit' => l('Schattenlogin beim Verkäufer', 'user/' . $user->uid . '/shadow/' . $activeoffer->uid, array('query' => array('destination' => 'admin/offers'))),
+		);
+	}
+	
+	$output = theme('table', array('header' => $header, 'rows' => $options));
 	
 	return render($form) . $output . theme('pager');
 }
