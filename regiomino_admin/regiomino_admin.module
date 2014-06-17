@@ -920,6 +920,7 @@ function regiomino_admin_allorders_access() {
 	$account = user_load($user->uid);
 	$return = FALSE;
 	in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
+	if($return) return $return;
 	in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
 	if($return) return $return;
 }
@@ -930,6 +931,7 @@ function regiomino_admin_alloffers_access() {
 	$account = user_load($user->uid);
 	$return = FALSE;
 	in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
+	if($return) return $return;
 	in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
 	if($return) return $return;
 }
@@ -940,6 +942,7 @@ function regiomino_admin_offersmissingcommercial_access() {
 	$account = user_load($user->uid);
 	$return = FALSE;
 	in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
+	if($return) return $return;
 	in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
 	if($return) return $return;
 }
