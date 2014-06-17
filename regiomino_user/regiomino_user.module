@@ -505,7 +505,7 @@ function regiomino_user_mail($key, &$message, $params) {
 		//switching on $key lets you create variations of the email based on the $key parameter
 		case 'register_no_approval_required':
 			$message['subject'] = 'Ihre Registrierung für regiomino.de';
-var_dump('<p>Sehr geehrter Kunde,</p><p>vielen Dank für die Registrierung auf www.regiomino.de. Sie können sich jetzt mit folgenden Daten auf www.regiomino.de anmelden und die besten Waren aus Ihrer Region kaufen.</p><p>E-Mail: ' . $params['account']->mail . '<br />Passwort: ' . $params['password'] . '</p><p>Viele Grüße,<br />Ihr Regiomino-Team</p>'); die();
+
 			$message['body'][] = '<p>Sehr geehrter Kunde,</p><p>vielen Dank für die Registrierung auf www.regiomino.de. Sie können sich jetzt mit folgenden Daten auf www.regiomino.de anmelden und die besten Waren aus Ihrer Region kaufen.</p><p>E-Mail: ' . $params['account']->mail . '<br />Passwort: ' . $params['password'] . '</p><p>Viele Grüße,<br />Ihr Regiomino-Team</p>';
 			
 		break;
