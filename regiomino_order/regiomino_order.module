@@ -2037,6 +2037,8 @@ function regiomino_order_cron() {
 		->propertyCondition('invoice', NULL)
 		->execute();
 		
+	$shipping_items = array();
+	
 	if(isset($shippingqry['regiomino_order_shipping'])) {
 		$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
 	}
