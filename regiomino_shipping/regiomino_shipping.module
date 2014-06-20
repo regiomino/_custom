@@ -2139,7 +2139,7 @@ function regiomino_shipping_get_available_pickupdates($product, $type = NULL, $c
 					$deliverytimestamp_roundup = strtotime(date('Y-m-d', $deliverytimestamp) . ' +1 day');
 					
 					//Determine the postal code of the seller for picking up
-					$storage_postal_code = $shipperprofile->field_address[LANGUAGE_NONE][0]['postal_code'];
+					$storage_postal_code = $storage_data->field_address[LANGUAGE_NONE][0]['postal_code'];
 					
 					//Fragment the seller postal code to be able to compare it against areas (incomplete postal codes)
 					$storageplzfragments = array();
