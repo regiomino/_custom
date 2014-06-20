@@ -983,6 +983,9 @@ function regiomino_order_payment_form_submit($form, &$form_state) {
 			$created = date('Y-m-d G:i:s', $ordertime);
 			$sellerprofilenode = node_load($nidvalue['sellernid']);
 			$selleraddressitems = field_get_items('node', $sellerprofilenode, 'field_address');
+			$sellerphoneitem = field_get_items('node', $sellerprofilenode, 'field_privatephone');
+			if(is_null($sellerphoneitem[0]['number'])) $sellerphoneitem[0]['number'] = '';
+	
 			if($paymenttype[0]['value'] == 'prepaid') {
 				$order_status_type = 'completed';
 			}
@@ -1028,7 +1031,7 @@ function regiomino_order_payment_form_submit($form, &$form_state) {
 				'billing_zone' => 0, //tbd
 				'billing_postal_code' => $billingaddressitems[0]['postal_code'],
 				'billing_country' => '276', //tbd
-				'seller_phone' => '',
+				'seller_phone' => $sellerphoneitem[0]['number'],
 				'seller_company' => $sellerprofilenode->field_company_name[LANGUAGE_NONE][0]['value'], //tbd
 				'seller_street1' => $selleraddressitems[0]['thoroughfare'],
 				'seller_street2' => $selleraddressitems[0]['premise'],

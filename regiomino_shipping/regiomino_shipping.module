@@ -1085,7 +1085,10 @@ function regiomino_shipping_get_assignments_print_pickup($sid, $return = FALSE, 
 		$seller['city'] = $ordervalues->seller_city;
 		$seller['phone'] = 'kA';
 		if(!empty($ordervalues->seller_phone)) $seller['phone'] = '+49 (0) ' . ltrim($ordervalues->seller_phone, '0');
-		
+		$seller['pickupdesc'] = 'kA';
+		if(!empty($sellerprofile->field_pickuplocation[LANGUAGE_NONE][0]['value'])) $seller['pickupdesc'] = $sellerprofile->field_pickuplocation[LANGUAGE_NONE][0]['value'];
+		$seller['alternativepickup'] = 'kA';
+		if(!empty($sellerprofile->field_alternativepickuplocation[LANGUAGE_NONE][0]['value'])) $seller['alternativepickup'] = $sellerprofile->field_alternativepickuplocation[LANGUAGE_NONE][0]['value'];
 	}
 	
 	$pointinfo = field_collection_item_load($pointfci);
@@ -1102,7 +1105,7 @@ function regiomino_shipping_get_assignments_print_pickup($sid, $return = FALSE, 
 	
 			
 	$html = '<p style="font-size: large;"><strong>Abholung: ' . date('d.m.Y', $pickup_range_to_day) . '</strong></p>
-			<p style="font-size: xx-large;">Verkäufer: ' . $seller['company'] . '<br />' . $seller['street1'] . $seller['street2'] . ', ' . $seller['zipcode'] . ' ' . $seller['city'] . '<br />Tel.: ' . $seller['phone'] . '</p>
+			<p style="font-size: xx-large;">Verkäufer: ' . $seller['company'] . '<br />' . $seller['street1'] . $seller['street2'] . ', ' . $seller['zipcode'] . ' ' . $seller['city'] . '<br />Tel.: ' . $seller['phone'] . '<br />Beschreibung des Abholorts: ' . $seller['pickupdesc'] . '<br />Alternativer Abholort: ' . $seller['alternativepickup'] . '</p>
 						<style>
 						tr.rechnungsposheader th {
 							border-bottom: 0.5px solid #000000;
