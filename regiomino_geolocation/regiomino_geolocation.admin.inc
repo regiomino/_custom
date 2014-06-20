@@ -165,9 +165,13 @@ function regiomino_geolocation_refill_db() {
 	
 	$pickuppoints = array();
 	foreach($field_collections as $fci=>$fcinfo) {
-		$pickuppoints[$fci] = $fcinfo->field_address[LANGUAGE_NONE][0]['postal_code'] . ' ' . $fcinfo->field_address[LANGUAGE_NONE][0]['locality'] . ' ' . $fcinfo->field_address[LANGUAGE_NONE][0]['name_line'];
+		$set = FALSE;
+		$timetoday = strtotime(date('Y-m-d'));
+		foreach($fcinfo->field_delivery_dates[LANGUAGE_NONE] as $dlvdatekey => $dlvdate) {
+			if(strtotime(date('Y-m-d', strtotime($dlvdate['value']))) > $timetoday) $set = TRUE;
+		}
+		if($set) $pickuppoints[$fci] = $fcinfo->field_address[LANGUAGE_NONE][0]['postal_code'] . ' ' . $fcinfo->field_address[LANGUAGE_NONE][0]['locality'] . ' ' . $fcinfo->field_address[LANGUAGE_NONE][0]['name_line'];
 	}
-	
 	variable_set('regiomino_geodb_avlbpoints', $pickuppoints);
 	drupal_set_message(t('Variable with available Regiomino points has been updated: @variable', array('@variable' => 'regiomino_geodb_avlbpoints')), 'status');
 
