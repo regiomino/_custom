@@ -5,11 +5,21 @@
  */
 function regiomino_geolocation_init() {
 
+	global $base_url;
+			
 	$params = drupal_get_query_parameters();
 	if(isset($params['resetloc']) && $params['resetloc'] == '1') {
 		unset($_SESSION['geolocation_data']);
-		regiomino_cart_delete_cart();	
-		drupal_goto(current_path());
+		regiomino_cart_delete_cart();
+
+		$tmp1 = explode('//', $base_url);
+		$tmp2 = explode('.', $tmp1[1]);
+		$current_path = current_path();
+		
+		$newurlstring = $tmp1[0] . '//' . $tmp2[1];
+		if(isset($tmp2[2])) $newurlstring .= '.' . $tmp2[2];
+		if(isset($current_path)) $newurlstring .= '/' . $current_path;
+		drupal_goto($newurlstring, array('external' => TRUE));
 	}
 
 	if(isset($_SESSION['geolocation_data']['deliveryoption'])) {
@@ -23,34 +33,69 @@ function regiomino_geolocation_init() {
 		}
 	}
 	
-	/* global $base_url;
-	$tmp1 = explode('//', $base_url);
-	$tmp2 = explode('.', $tmp1[1]);
-	if(isset($tmp2[1]) && !empty($tmp2[0])) {
-		if(isset($_SESSION['geolocation_data'])) {
-			//check if session zipcode is contained in input region
-			$query = new EntityFieldQuery();
-			$result = $query
-				->entityCondition('entity_type', 'field_collection_item')
-				->entityCondition('bundle', 'field_delivery_options')
-				->fieldCondition('field_metro_key', 'value', $tmp2[0])
-				->fieldCondition('field_delivery_areas', 'value', $_SESSION['geolocation_data']['zipcode'])
-				->execute();
-			if(empty($result)) {
+	if(!isset($_SESSION['geolocation_data'])) {
+		$tmp1 = explode('//', $base_url);
+		$tmp2 = explode('.', $tmp1[1]);
+		if(isset($tmp2[1]) && !empty($tmp2[0])) {
+			if(isset($_SESSION['geolocation_data'])) {
+				//check if session zipcode is contained in input region
+				$query = new EntityFieldQuery();
+				$result = $query
+					->entityCondition('entity_type', 'field_collection_item')
+					->entityCondition('bundle', 'field_delivery_options')
+					->fieldCondition('field_metro_key', 'value', $tmp2[0])
+					->fieldCondition('field_delivery_areas', 'value', $_SESSION['geolocation_data']['zipcode'])
+					->execute();
+				if(empty($result)) {
+					//detect region automatically based on input
+					regiomino_geolocation_detect_by_subdomain($tmp2[0]);
+				}
+				else {
+					//all is good, do nothing
+				}
+			}
+			else {
 				//detect region automatically based on input
 				regiomino_geolocation_detect_by_subdomain($tmp2[0]);
 			}
-			else {
-				//all is good, do nothing
-			}
 		}
-		else {
-			//detect region automatically based on input
-			regiomino_geolocation_detect_by_subdomain($tmp2[0]);
-		}
-	} */
-	
+	}
+
 	theme('regiomino_geolocation_javascript');
+}
+
+function regiomino_geolocation_detect_by_subdomain($metro_key) {
+	$query = new EntityFieldQuery;
+	$tmp = $query
+		->entityCondition('entity_type', 'field_collection_item')
+		->fieldCondition('field_metro_key', 'value', $metro_key)
+		->execute();
+	$alltmpvalues = array_values($tmp['field_collection_item']);
+	$fci = field_collection_item_load($alltmpvalues[0]->item_id);
+	$regiomino_geodb_avlbregions = variable_get('regiomino_geodb_avlbregions');
+	$options_dates = regiomino_shipping_get_regional_deliveryoptions($fci->field_delivery_areas[LANGUAGE_NONE][0]['value'], 1);
+	$deliveryoption = array_keys($options_dates);
+	
+	$_SESSION['geolocation_data'] = array(
+		'zipcode' => $fci->field_delivery_areas[LANGUAGE_NONE][0]['value'],
+		'locality' => $regiomino_geodb_avlbregions[$fci->field_delivery_areas[LANGUAGE_NONE][0]['value']][0]['name'],
+		'latitude' => $regiomino_geodb_avlbregions[$fci->field_delivery_areas[LANGUAGE_NONE][0]['value']][0]['lat'],
+		'longitude' => $regiomino_geodb_avlbregions[$fci->field_delivery_areas[LANGUAGE_NONE][0]['value']][0]['lon'],
+		'type' => 'bringlivery',
+		'deliveryoption' => $deliveryoption[0],
+		'metro_key' => $metro_key, 
+		'metro_name' => $fci->field_metro_name[LANGUAGE_NONE][0]['value'], 
+		'customertype' => 'private', 
+		'pricefieldtype' => 'field_tu_gross', 
+	);
+	global $user;
+	if($user->uid > 0) {
+		$userobject = user_load($user->uid);
+		if(in_array('Gewerbekunde', $userobject->roles)) {
+			$_SESSION['geolocation_data']['customertype'] = 'commercial';
+			$_SESSION['geolocation_data']['pricefieldtype'] = 'field_tu_price';
+		}
+	}
 }
 
 /**
@@ -418,8 +463,8 @@ function regiomino_geolocation_block_view($delta = '') {
 				//Create form for entering zip code
 				$block['content'] = theme('regiomino_geolocation_theme_request', array(
 															'vars' => array(
-																'form_zipcode' => drupal_render(drupal_get_form('regiomino_geolocation_zip_code_entry')),
-																'form_rmpoint' => drupal_render(drupal_get_form('regiomino_geolocation_rm_point_entry')),
+																'form_zipcode' => drupal_render(drupal_get_form('regiomino_geolocation_region_entry')),
+																//'form_rmpoint' => drupal_render(drupal_get_form('regiomino_geolocation_rm_point_entry')),
 																//'regiomino_geodb_avlbregions' => variable_get('regiomino_geodb_avlbregions'),
 																//'regiomino_geodb_avlbpoints' => variable_get('regiomino_geodb_avlbpoints'),
 															),
@@ -449,7 +494,7 @@ function regiomino_geolocation_block_view($delta = '') {
 						$templatearray['vars']['geoloc_loc'] = $_SESSION['geolocation_data']['locality'];
 						$templatearray['vars']['geoloc_type'] = $_SESSION['geolocation_data']['type'];
 						$templatearray['vars']['geoloc_option'] = $_SESSION['geolocation_data']['deliveryoption'];
-						$templatearray['vars']['timewindow'] = date('d.m.Y H:i', $deliveryoption[1]) . '-' . date('H:i', $deliveryoption[2]);
+						$templatearray['vars']['timewindow'] = date('d.m.Y', $deliveryoption[1]);
 					}
 					
 					$block['content'] = theme('regiomino_geolocation_theme_display', $templatearray);
@@ -457,6 +502,71 @@ function regiomino_geolocation_block_view($delta = '') {
 			}
 			return $block;  
 	}
+}
+
+function regiomino_geolocation_region_entry($form, &$form_state) {	
+
+	$avlbregions = variable_get('regiomino_geodb_avlbregions');
+
+	$options_zipcodes = array();
+	foreach($avlbregions as $zip => $more) {
+		foreach($more as $key=>$value) {
+			$options_zipcodes[$zip] = $zip . ' ' . $value['name'];
+		}
+	}
+		$form['regiomino_geolocation_region']['zipcode'] = array(
+		'#type' => 'select',
+		'#size' => 1,
+		'#empty_option' => '- Ihre PLZ -',
+		'#options' => $options_zipcodes,
+	);
+
+	$form['regiomino_geolocation_region']['submit-zipcode'] = array(
+		'#type' => 'submit',
+		'#value' => t('OK'),
+	);
+	return $form;
+}
+
+function regiomino_geolocation_region_entry_submit($form, &$form_state) {
+
+	$query = new EntityFieldQuery;
+	$tmp = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'shipper_profile')
+		->propertyCondition('status', 1)
+		->execute();
+		
+	$allshippers = entity_load('node', array_keys($tmp['node']));
+
+	$metro_key = '';
+	
+	foreach($allshippers as $nid => $nodeobject) {
+		$allfcis = entity_load('field_collection_item', $nodeobject->field_delivery_options[LANGUAGE_NONE]);
+		foreach($allfcis as $fcid => $fcinfo) {
+			foreach($fcinfo->field_delivery_areas[LANGUAGE_NONE] as $fcdainfo) {
+				if($fcdainfo['value'] == $form_state['values']['zipcode']) $metro_key = $fcinfo->field_metro_key[LANGUAGE_NONE][0]['value'];
+				if($metro_key) break;
+			}
+			if($metro_key) break;
+		}
+		if($metro_key) break;
+	}
+	global $base_url;
+	$tmp1 = explode('//', $base_url);
+	$tmp2 = explode('.', $tmp1[1]);
+	$current_path = current_path();
+	$newurlstring = $tmp1[0] . '//';
+	if($metro_key) $newurlstring .= $metro_key . '.';
+	if($tmp2[1]) {
+		$newurlstring .= $tmp2[1];
+	}
+	else {
+		$newurlstring .= $tmp2[0];
+	}
+	if(isset($tmp2[2])) $newurlstring .= '.' . $tmp2[2];
+	if(isset($current_path)) $newurlstring .= '/' . $current_path;
+	drupal_goto($newurlstring, array('external' => TRUE));
 }
 
 function _ajax_return_zipcode_availabledates($form, $form_state) {
