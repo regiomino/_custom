@@ -481,7 +481,7 @@ function regiomino_geolocation_block_view($delta = '') {
 						$templatearray['vars']['geoloc_loc'] = $_SESSION['geolocation_data']['locality'];
 						$templatearray['vars']['geoloc_type'] = $_SESSION['geolocation_data']['type'];
 						$templatearray['vars']['geoloc_option'] = $_SESSION['geolocation_data']['deliveryoption'];
-						$templatearray['vars']['timewindow'] = date('d.m.Y', $deliveryoption[1]);
+						$templatearray['vars']['timewindow'] = t(date('l', $deliveryoption[1])) . ', ' . date('d.m.Y', $deliveryoption[1]);
 					}
 					
 					$block['content'] = theme('regiomino_geolocation_theme_display', $templatearray);
