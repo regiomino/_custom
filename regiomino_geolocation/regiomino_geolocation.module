@@ -32,32 +32,12 @@ function regiomino_geolocation_init() {
 			drupal_goto(current_path());
 		}
 	}
-	
+
 	if(!isset($_SESSION['geolocation_data'])) {
 		$tmp1 = explode('//', $base_url);
 		$tmp2 = explode('.', $tmp1[1]);
-		if(isset($tmp2[1]) && !empty($tmp2[0])) {
-			if(isset($_SESSION['geolocation_data'])) {
-				//check if session zipcode is contained in input region
-				$query = new EntityFieldQuery();
-				$result = $query
-					->entityCondition('entity_type', 'field_collection_item')
-					->entityCondition('bundle', 'field_delivery_options')
-					->fieldCondition('field_metro_key', 'value', $tmp2[0])
-					->fieldCondition('field_delivery_areas', 'value', $_SESSION['geolocation_data']['zipcode'])
-					->execute();
-				if(empty($result)) {
-					//detect region automatically based on input
-					regiomino_geolocation_detect_by_subdomain($tmp2[0]);
-				}
-				else {
-					//all is good, do nothing
-				}
-			}
-			else {
-				//detect region automatically based on input
-				regiomino_geolocation_detect_by_subdomain($tmp2[0]);
-			}
+		if(isset($tmp2[1]) && !empty($tmp2[0]) && $tmp2[0] != 'www') {
+			regiomino_geolocation_detect_by_subdomain($tmp2[0]);
 		}
 	}
 
@@ -73,14 +53,21 @@ function regiomino_geolocation_detect_by_subdomain($metro_key) {
 	$alltmpvalues = array_values($tmp['field_collection_item']);
 	$fci = field_collection_item_load($alltmpvalues[0]->item_id);
 	$regiomino_geodb_avlbregions = variable_get('regiomino_geodb_avlbregions');
-	$options_dates = regiomino_shipping_get_regional_deliveryoptions($fci->field_delivery_areas[LANGUAGE_NONE][0]['value'], 1);
+	$myzipkey = '';
+	foreach($regiomino_geodb_avlbregions as $zipkey => $somevalue) {
+		if(strpos($zipkey, $fci->field_delivery_areas[LANGUAGE_NONE][0]['value']) !== FALSE) {
+			$myzipkey = $zipkey;
+			break;
+		}
+	}
+	$options_dates = regiomino_shipping_get_regional_deliveryoptions($myzipkey, 1);
 	$deliveryoption = array_keys($options_dates);
 	
 	$_SESSION['geolocation_data'] = array(
 		'zipcode' => $fci->field_delivery_areas[LANGUAGE_NONE][0]['value'],
-		'locality' => $regiomino_geodb_avlbregions[$fci->field_delivery_areas[LANGUAGE_NONE][0]['value']][0]['name'],
-		'latitude' => $regiomino_geodb_avlbregions[$fci->field_delivery_areas[LANGUAGE_NONE][0]['value']][0]['lat'],
-		'longitude' => $regiomino_geodb_avlbregions[$fci->field_delivery_areas[LANGUAGE_NONE][0]['value']][0]['lon'],
+		'locality' => $regiomino_geodb_avlbregions[$myzipkey][0]['name'],
+		'latitude' => $regiomino_geodb_avlbregions[$myzipkey][0]['lat'],
+		'longitude' => $regiomino_geodb_avlbregions[$myzipkey][0]['lon'],
 		'type' => 'bringlivery',
 		'deliveryoption' => $deliveryoption[0],
 		'metro_key' => $metro_key, 
@@ -511,7 +498,7 @@ function regiomino_geolocation_region_entry($form, &$form_state) {
 	$options_zipcodes = array();
 	foreach($avlbregions as $zip => $more) {
 		foreach($more as $key=>$value) {
-			$options_zipcodes[$zip] = $zip . ' ' . $value['name'];
+			if(!isset($options_zipcodes[$zip])) $options_zipcodes[$zip] = $zip . ' ' . $value['name'];
 		}
 	}
 		$form['regiomino_geolocation_region']['zipcode'] = array(
@@ -530,6 +517,11 @@ function regiomino_geolocation_region_entry($form, &$form_state) {
 
 function regiomino_geolocation_region_entry_submit($form, &$form_state) {
 
+	$zipfragments = array();
+	for($i=1; $i<=strlen($form_state['values']['zipcode']); $i++) {
+		$zipfragments[] = substr($form_state['values']['zipcode'], 0, $i);
+	}
+	
 	$query = new EntityFieldQuery;
 	$tmp = $query
 		->entityCondition('entity_type', 'node')
@@ -545,7 +537,7 @@ function regiomino_geolocation_region_entry_submit($form, &$form_state) {
 		$allfcis = entity_load('field_collection_item', $nodeobject->field_delivery_options[LANGUAGE_NONE]);
 		foreach($allfcis as $fcid => $fcinfo) {
 			foreach($fcinfo->field_delivery_areas[LANGUAGE_NONE] as $fcdainfo) {
-				if($fcdainfo['value'] == $form_state['values']['zipcode']) $metro_key = $fcinfo->field_metro_key[LANGUAGE_NONE][0]['value'];
+				if(in_array($fcdainfo['value'], $zipfragments)) $metro_key = $fcinfo->field_metro_key[LANGUAGE_NONE][0]['value'];
 				if($metro_key) break;
 			}
 			if($metro_key) break;
