@@ -145,6 +145,9 @@ function regiomino_productranking_searchterm() {
 	$term = arg(2);
 	$return = 'No results';
 	$queryparams = drupal_get_query_parameters();
+	if(!isset($queryparams['seller'])) $queryparams['seller'] = '';
+	if(!isset($queryparams['label'])) $queryparams['label'] = '';
+	if(!isset($queryparams['category'])) $queryparams['category'] = '';
 	
 	if(isset($_SESSION['geolocation_data'])) {
 		$customertype = $_SESSION['geolocation_data']['customertype'];
@@ -171,40 +174,45 @@ function regiomino_productranking_searchterm() {
 			$labelentities = array();
 			foreach($documents as $key=>$offervalues) {
 			
-				//Sellers
-				$sellers[$offervalues->fields->_author[0]]['name'] = $offervalues->fields->sellerprofile_title[0];
-				if(isset($sellers[$offervalues->uid]['amount'])) {
-					$sellers[$offervalues->fields->_author[0]]['amount'] += 1;
-				}
-				else {
-					$sellers[$offervalues->fields->_author[0]]['amount'] = 1;
-				}
-				$sellers[$offervalues->fields->_author[0]]['active'] = FALSE;
-				if($queryparams['seller'] == $offervalues->fields->sellerprofile_nid[0]) {
-					$sellers[$offervalues->fields->_author[0]]['active'] = TRUE;
-				}
-				$sellers[$offervalues->fields->_author[0]]['link'] = url('suche/angebote/' . $term, array('query' => array('label' => $queryparams['label'], 'seller' => $offervalues->fields->sellerprofile_nid[0], 'category' => $queryparams['category'])));
-				$sellers[$offervalues->fields->_author[0]]['removelink'] = url('suche/angebote/' . $term, array('query' => array('label' => $queryparams['label'], 'category' => $queryparams['category'])));;
-				
-				//Labels
-				$labelentitiestmp = json_decode($offervalues->fields->labels[0]);
-				if(!empty($labelentitiestmp)) {
-					foreach($labelentitiestmp as $lkey=>$lval) {
-						$labelentities[$lval->target_id] = $lval;
-						$labelentities[$lval->target_id]->field_image[LANGUAGE_NONE][0]['uri'] = $lval->image_uri;
-						$labelentities[$lval->target_id]->link = url('suche/angebote/' . $term, array('query' => array('label' => $lval->target_id, 'seller' => $queryparams['seller'], 'category' => $queryparams['category'])));
-						$labelentities[$lval->target_id]->removelink = url('suche/angebote/' . $term, array('query' => array('seller' => $queryparams['seller'], 'category' => $queryparams['category'])));
-						if($queryparams['label'] == $lval->target_id) {
-							$labelentities[$lval->target_id]->selected = TRUE;
+				$nodeobject = node_load($offervalues->id);
+				if($nodeobject && $nodeobject->type == 'offer') {
+					//Sellers
+					$sellers[$offervalues->fields->_author[0]]['name'] = $offervalues->fields->sellerprofile_title[0];
+					if(isset($sellers[$offervalues->fields->_author[0]]['amount'])) {
+						$sellers[$offervalues->fields->_author[0]]['amount'] += 1;
+					}
+					else {
+						$sellers[$offervalues->fields->_author[0]]['amount'] = 1;
+					}
+					$sellers[$offervalues->fields->_author[0]]['active'] = FALSE;
+					if($queryparams['seller'] == $offervalues->fields->sellerprofile_nid[0]) {
+						$sellers[$offervalues->fields->_author[0]]['active'] = TRUE;
+					}
+					$sellers[$offervalues->fields->_author[0]]['link'] = url('suche/angebote/' . $term, array('query' => array('label' => $queryparams['label'], 'seller' => $offervalues->fields->sellerprofile_nid[0], 'category' => $queryparams['category'])));
+					$sellers[$offervalues->fields->_author[0]]['removelink'] = url('suche/angebote/' . $term, array('query' => array('label' => $queryparams['label'], 'category' => $queryparams['category'])));;
+					
+					//Labels
+					$labelentitiestmp = json_decode($offervalues->fields->labels[0]);
+					if(!empty($labelentitiestmp)) {
+						foreach($labelentitiestmp as $lkey=>$lval) {
+							$labelentities[$lval->target_id] = $lval;
+							$labelentities[$lval->target_id]->field_image[LANGUAGE_NONE][0]['uri'] = $lval->image_uri;
+							$labelentities[$lval->target_id]->link = url('suche/angebote/' . $term, array('query' => array('label' => $lval->target_id, 'seller' => $queryparams['seller'], 'category' => $queryparams['category'])));
+							$labelentities[$lval->target_id]->removelink = url('suche/angebote/' . $term, array('query' => array('seller' => $queryparams['seller'], 'category' => $queryparams['category'])));
+							if($queryparams['label'] == $lval->target_id) {
+								$labelentities[$lval->target_id]->selected = TRUE;
+							}
 						}
 					}
+				}
+				else {
+					unset($documents[$key]);
 				}
 			}
 			$offerstmp = regiomino_productranking_boost_entities_search($documents);
 			$offers = array();
 			foreach($offerstmp as $key=>$value) {
 				$tmpobject = new stdClass;
-				
 				$avlbpickupdates = regiomino_shipping_get_available_pickupdates($value->id, 'bringlivery', FALSE);
 				$avlbcpickupdates = regiomino_shipping_get_available_pickupdates($value->id, 'centralpickup', FALSE);
 				$delay = $value->fields->pickupdelay[0] * 3600;

@@ -305,11 +305,6 @@ function regiomino_admin_manage_offers_edit($form, &$form_state) {
 			}
 		}
 	}
-
-	
-	
-	watchdog('asdfjkjlkasdjfas', print_r($form_state['values']['category2'], TRUE));
-	watchdog('asdfjkjlkasdjfas', print_r($form['regiomino_offer_create']['productinfo']['category2']['#options'], TRUE));
 	
 	
 	

@@ -647,6 +647,10 @@ function regiomino_admin_manage_offers_createnewnode($form_state, $createtemplat
 	$new_node = node_submit($new_node);
 	node_save($new_node);
 	
+	if($publishrightaway) {
+		regiomino_offer_add_to_index($new_node);
+	}
+	
 	//Add tradingprices to node
 	$amountrevenue = array();
 	for($i=1; $i<=5; $i++) {
@@ -722,6 +726,7 @@ function regiomino_admin_manage_offers_edit_submit($form, &$form_state) {
 			'date_type' => 'date',
 		);
 		node_save($new_node);
+		regiomino_offer_remove_from_index($new_node->nid);
 	}
 	else {
 		global $user;
