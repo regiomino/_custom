@@ -225,8 +225,34 @@ function regiomino_cart_shippingaddressinfo_form_validate($form, &$form_state) {
 		
 	$shippingkey = regiomino_cart_get_shippingkey($user->uid);
 	
+	
+	
+	$metro_key = $_SESSION['geolocation_data']['metro_key'];
+	
 	if($shippingkey != 'centralpickup') {
-		if($form_state['values']['deliveryzip'] != $_SESSION['geolocation_data']['zipcode']) {
+
+		$err = TRUE;
+		if(isset($metro_key)) {
+			$query = new EntityFieldQuery;
+			$tmp = $query
+				->entityCondition('entity_type', 'field_collection_item')
+				->fieldCondition('field_metro_key', 'value', $metro_key)
+				->execute();
+			$alltmpvalues = array_values($tmp['field_collection_item']);
+			$fci = field_collection_item_load($alltmpvalues[0]->item_id);
+			$myzipkey = '';
+			foreach($fci->field_delivery_areas[LANGUAGE_NONE] as $index => $zipcode) {
+				if(strpos($form_state['values']['deliveryzip'], $zipcode['value']) !== FALSE) {
+					$err = FALSE;
+					break;
+				}
+			}
+		}
+		else {
+			form_set_error('deliveryaddress', t('Please select a region before you check out.'));
+		}
+	
+		if($err) {
 			form_set_error('deliveryaddress', t('You have entered a delivery address that differs from your selected zip code region. Please enter a matching delivery address or <a href="@url">change the region</a> (<strong>All products will be removed from you cart</strong>)', array('@url' => url('node', array('query' => array('resetloc' => '1'))))));
 		}
 	
