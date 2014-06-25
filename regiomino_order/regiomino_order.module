@@ -293,25 +293,40 @@ function regiomino_order_novalnet_confirm() {
 	watchdog('novalnet_ibt', 'path has been triggered: @postdata', array('@postdata' => print_r($_REQUEST, TRUE)));
 	if($_REQUEST['status'] && $_REQUEST['status_message']) {
 		watchdog('novalnet_ibt', 'notification from novalnet received: @postdata', array('@postdata' => print_r($_REQUEST, TRUE)));
-		//if (regiomino_order_novalnet_checkHash($_REQUEST, 'eb1e78328c46506b46a4ac4a1e378b91') == true) {
-		//for some reason request does not contain hash2 as stated in docs
-		if(true) {
-			//daten sind in ordnung
-			watchdog('novalnet_ibt', 'success checkhash');
-			if($_REQUEST['status'] == 100) {
-				//success
-				watchdog('novalnet_ibt', 'success txn');
-				regiomino_order_successfulpayment($_REQUEST['uniqid'], $_REQUEST['amount']/100, 'sofort');
-			}
-			else {
-				//failure
-				watchdog('novalnet_ibt', 'failure txn');
-			}
+		if($_REQUEST['payment_type'] == 'INVOICE_CREDIT') {
+			//regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display)
+			$transactionid = regiomino_user_write_points(
+				$_REQUEST['amount']/100,
+				446,
+				$_REQUEST['customer_no'],
+				'Rechnung: ' . t('Incoming payment'),
+				'incoming_payment_' . $_REQUEST['order_no'],
+				'customer',
+				FALSE
+			);
+			watchdog('novalnet_invoice_received', 'Invoice was paid by User @uid with the amount of @amount', array('@uid' => $_REQUEST['customer_no'], '@amount' => $_REQUEST['amount']/100));
 		}
 		else {
-			//daten sind mglw manipuliert
-			watchdog('novalnet_ibt', 'failure checkhash');
-			//send alertmail
+			//if (regiomino_order_novalnet_checkHash($_REQUEST, 'eb1e78328c46506b46a4ac4a1e378b91') == true) {
+			//for some reason request does not contain hash2 as stated in docs
+			if(true) {
+				//daten sind in ordnung
+				watchdog('novalnet_ibt', 'success checkhash');
+				if($_REQUEST['status'] == 100) {
+					//success
+					watchdog('novalnet_ibt', 'success txn');
+					regiomino_order_successfulpayment($_REQUEST['uniqid'], $_REQUEST['amount']/100, 'sofort');
+				}
+				else {
+					//failure
+					watchdog('novalnet_ibt', 'failure txn');
+				}
+			}
+			else {
+				//daten sind mglw manipuliert
+				watchdog('novalnet_ibt', 'failure checkhash');
+				//send alertmail
+			}
 		}
 	}
 }
@@ -1620,7 +1635,7 @@ function regiomino_order_mail($key, &$message, $params) {
 				//$headerinfo .= '<p>' . t('In case you did not finish payment after checking out, you can pickup the payment process by clicking on the following button') . '</p><p>' . t('<a href="@url">Complete payment with @provider</a>', array('@url' => url($params['paymentgoto'], $params['paymentoptions']), '@provider' => $payment[$params['paymenttype']]));
 			}
 			elseif($params['paymenttype'] == 'invoicepay') {
-				$headerinfo .= '<p>' . t('Please transfer the amount of <strong>@total €</strong> to @accountholder, IBAN: @iban, Verwendungszweck: @reason<br />.', array('@total' => number_format($orderaddup, 2, ',', '.'), '@accountholder' => 'Regiomino GmbH', '@iban' => 'DE63763400610826123200', '@reason' => $params['addressitems'][0]['last_name'] . ' ' . $params['orderid'])) . '</p>';
+				$headerinfo .= '<p>Bitte prüfen Sie Ihren E-Mail-Eingang. Sie haben von unserem Zahlungsdienstanbieter Novalnet eine E-Mail erhalten mit Angaben zur Durchführung Ihrer Zahlung. Bitte beachten Sie, dass wir für Bestellungen per Rechnung ein Zahlungsziel von 14 Tagen ansetzen.</p>';
 			}
 			
 			$headerinfo .= '<p>' . t('Thank you very much') . ',<br />' . t('Your Regiomino team') . '</p>';
