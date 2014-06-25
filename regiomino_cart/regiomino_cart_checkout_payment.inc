@@ -114,6 +114,11 @@ function regiomino_cart_paymentinfo_form($form, &$form_state) {
 	foreach($payment_types as $key=>$value) {
 		$imgstyle = 'paymenttype_logo';
 		$notavailable = '';
+		if($value->field_paymentkey[LANGUAGE_NONE][0]['value'] == 'invoicepay') {
+			if(!isset($userobject->field_buyperinvoice[LANGUAGE_NONE][0]['value']) || $userobject->field_buyperinvoice[LANGUAGE_NONE][0]['value'] != 1) {
+				continue;
+			}
+		}
 		if($value->status == 0) {
 			$deactivate[] = $value->field_paymentkey[LANGUAGE_NONE][0]['value'];
 			$notavailable = ' (' . t('Available shortly') . ')';

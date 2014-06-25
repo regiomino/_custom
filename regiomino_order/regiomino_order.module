@@ -536,16 +536,18 @@ function regiomino_order_successfulpayment($order_process_id, $payment_amount = 
 			FALSE
 		);
 
-		//regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display)
-		$transactionid = regiomino_user_write_points(
-			$payment_amount,
-			446,
-			$uid,
-			$payment[$type] . ': ' . t('Incoming payment'),
-			'incoming_payment_' . $order_process_id,
-			'customer',
-			FALSE
-		);
+		if($type != 'invoicepay') {
+			//regiomino_user_write_points($points, $category, $uid, $description, $reference, $operation, $display)
+			$transactionid = regiomino_user_write_points(
+				$payment_amount,
+				446,
+				$uid,
+				$payment[$type] . ': ' . t('Incoming payment'),
+				'incoming_payment_' . $order_process_id,
+				'customer',
+				FALSE
+			);
+		}
 		
 		//Update order table
 		$allorderids = db_query('SELECT order_id FROM {regiomino_order} o WHERE o.order_process_id = :order_process_id', array(':order_process_id' => $order_process_id));
@@ -1225,6 +1227,82 @@ function regiomino_order_payment_form_submit($form, &$form_state) {
 			$payment_options = array();
 		}
 	}
+	elseif($paymenttype[0]['value'] == 'invoicepay') {
+	
+		global $base_url;
+		global $base_path;
+		$return_url = $base_url . $base_path . 'thankyou';
+		$error_return = $base_url . $base_path . 'checkout/verify';
+
+
+		$vendor = variable_get('regiomino_payment_novalnet_vendor', 1852);
+		$auth_code_encoded = variable_get('regiomino_payment_novalnet_authcode', 'fXtYibPcVkVy7iJvKQ0WPZ2yK6Mwan');
+		$product_encoded = variable_get('regiomino_payment_novalnet_product', 2489);
+		$tariff_encoded = variable_get('regiomino_payment_novalnet_tariff', 4115);
+		$test_mode_encoded = variable_get('regiomino_payment_novalnet_testmode', 0);
+		$uniqid_encoded = $payment_id;
+		$amount_encoded = (round($ordertotal,2)-$currentbalance)*100;
+		
+		$url = variable_get('regiomino_payment_novalnet_paygate', 'https://payport.novalnet.de/paygate.jsp');
+		
+		$options = array(
+			'query' => array(
+				'utf8' => 1,
+				'amount' => $amount_encoded,
+				'currency' => 'EUR',
+				'vendor' => $vendor,
+				'auth_code' => $auth_code_encoded,
+				'product' => $product_encoded,
+				'tariff' => $tariff_encoded,
+				'key' => 27,
+				'invoice_type' => 'INVOICE',
+				'due_date' => date('Y-m-d', strtotime('+14 days')),
+				'remote_ip' => ip_address(),
+				'first_name' => $billingaddressitems[0]['first_name'],
+				'last_name' => $billingaddressitems[0]['last_name'],
+				'street' => $billingaddressitems[0]['thoroughfare'],
+				'house_no' => '',
+				'search_in_street' => 1,
+				'city' => $billingaddressitems[0]['locality'],
+				'zip' => $billingaddressitems[0]['postal_code'],
+				'country_code' => 'DE',
+				'email' => $user->mail,
+				'invoice_account' => '826123200',
+				'invoice_bankcode' => '76340061',
+				'invoice_iban' => 'DE63763400610826123200',
+				'invoice_bic' => 'COBADEFFXXX',
+				'invoice_bankname' => 'Commerzbank',
+				'invoice_bankplace' => 'Erlangen',
+				'test_mode' => $test_mode_encoded,
+				'order_no' => $uniqid_encoded,
+				'customer_no' => $user->uid,
+			),
+			'https' => TRUE,
+			'external' => TRUE,
+		);
+		$full_url = url($url, $options);
+		
+		if($test_mode_encoded) {
+			$status = 100;
+			$order_no = $uniqid_encoded;
+			$amount = $amount_encoded;
+		}
+		else {
+			$result = drupal_http_request($full_url);
+			parse_str($result->data);
+		}
+		
+		if($status != 100) {
+			watchdog('novalnet_debit', 'Invoice payment failed: @data', array('@data' => $result->data));
+			drupal_set_message(t('Your payment could not be performed. Please contact Regiomino support about this.'), 'error');
+			drupal_goto('checkout/payment');
+		}
+		else {
+			regiomino_order_successfulpayment($order_no, $amount, 'invoicepay');
+			$payment_goto = 'thankyou';
+			$payment_options = array();
+		}
+	}
 	elseif($paymenttype[0]['value'] == 'paypal') {
 		global $base_url;
 		global $base_path;
@@ -1540,6 +1618,9 @@ function regiomino_order_mail($key, &$message, $params) {
 			}
 			elseif($params['paymenttype'] == 'sofort') {
 				//$headerinfo .= '<p>' . t('In case you did not finish payment after checking out, you can pickup the payment process by clicking on the following button') . '</p><p>' . t('<a href="@url">Complete payment with @provider</a>', array('@url' => url($params['paymentgoto'], $params['paymentoptions']), '@provider' => $payment[$params['paymenttype']]));
+			}
+			elseif($params['paymenttype'] == 'invoicepay') {
+				$headerinfo .= '<p>' . t('Please transfer the amount of <strong>@total €</strong> to @accountholder, IBAN: @iban, Verwendungszweck: @reason<br />.', array('@total' => number_format($orderaddup, 2, ',', '.'), '@accountholder' => 'Regiomino GmbH', '@iban' => 'DE63763400610826123200', '@reason' => $params['addressitems'][0]['last_name'] . ' ' . $params['orderid'])) . '</p>';
 			}
 			
 			$headerinfo .= '<p>' . t('Thank you very much') . ',<br />' . t('Your Regiomino team') . '</p>';
