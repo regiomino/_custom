@@ -151,7 +151,12 @@ function regiomino_admin_manage_offers_create($form, &$form_state) {
 		for($i=1; $i<=5; $i++) {
 			$tpnet[$i] = floatval(str_replace(',', '.', $form_state['input']['tradingprice_' . $i . '_netrevenue']));
 			$tpshippingfee[$i] = $tpnet[$i] * 0.1;
-			$tprmfee[$i] = $tpnet[$i] * 0.1;
+			if($form_state['input']['tradingprice_' . $i . '_customertype'] == 'commercial') {
+				$tprmfee[$i] = $tpnet[$i] * 0.1;
+			}
+			else {
+				$tprmfee[$i] = $tpnet[$i] * 0.135;
+			}
 			$tpvat[$i] = ($tpnet[$i] + $tpshippingfee[$i] + $tprmfee[$i]) * $form_state['input']['vat'] / 100;
 			$tplisting[$i] = $tpnet[$i] + $tpshippingfee[$i] + $tprmfee[$i];
 			$tpgross[$i] = $tpnet[$i] + $tpshippingfee[$i] + $tprmfee[$i] + $tpvat[$i];
@@ -227,7 +232,12 @@ function regiomino_admin_manage_offers_edit($form, &$form_state) {
 		for($i=1; $i<=5; $i++) {
 			$tpnet[$i] = floatval(str_replace(',', '.', $form_state['input']['tradingprice_' . $i . '_netrevenue']));
 			$tpshippingfee[$i] = $tpnet[$i] * 0.1;
-			$tprmfee[$i] = $tpnet[$i] * 0.1;
+			if($form_state['input']['tradingprice_' . $i . '_customertype'] == 'commercial') {
+				$tprmfee[$i] = $tpnet[$i] * 0.1;
+			}
+			else {
+				$tprmfee[$i] = $tpnet[$i] * 0.135;
+			}
 			$tpvat[$i] = ($tpnet[$i] + $tpshippingfee[$i] + $tprmfee[$i]) * $form_state['input']['vat'] / 100;
 			$tplisting[$i] = $tpnet[$i] + $tpshippingfee[$i] + $tprmfee[$i];
 			$tpgross[$i] = $tpnet[$i] + $tpshippingfee[$i] + $tprmfee[$i] + $tpvat[$i];
@@ -642,13 +652,11 @@ function regiomino_admin_manage_offers_getformfields() {
 			'10.7' => '10,7 %',
 			'19' => '19 %',
 		),
-		'#ajax' => array(
-			//'callback' => '_ajax_update_tu_field_calculation',
-			//'wrapper' => 'tradingunits-fieldset-wrapper',
-			'callback' => '_ajax_update_tradingprice_field_calculation',
-			'wrapper' => 'tradingprices-fieldset-wrapper',
-			'event' => 'change',
-		),
+		// '#ajax' => array(
+			// 'callback' => '_ajax_update_tradingprice_field_calculation',
+			// 'wrapper' => 'tradingprices-fieldset-wrapper',
+			// 'event' => 'change',
+		// ),
 		'#title' => 'MwSt.',
 		'#title_display' => 'invisible',
 	);
@@ -681,11 +689,11 @@ function regiomino_admin_manage_offers_getformfields() {
           '#required'       => TRUE,
 					'#default_value'	=> number_format(0, 2, ",", "."),
 					'#field_suffix'		=> '€',
-					'#ajax' => array(
+/* 					'#ajax' => array(
 						'callback' => '_ajax_return_calculated_tradingprices',
 						'wrapper' => 'tradingprices-fieldset-wrapper',
 						'event' => 'blur',
-					),
+					), */
         ),
         'tradingprice_1_shipping' => array(
           '#type'           => 'textfield',
@@ -736,6 +744,11 @@ function regiomino_admin_manage_offers_getformfields() {
 						'private'	=> 'Privat',
 						'commercial'	=> 'Gewerblich',
 					),
+					// '#ajax' => array(
+						// 'callback' => '_ajax_update_tradingprice_field_calculation',
+						// 'wrapper' => 'tradingprices-fieldset-wrapper',
+						// 'event' => 'change',
+					// ),
         ),
       ),			
       array(
@@ -751,11 +764,11 @@ function regiomino_admin_manage_offers_getformfields() {
           '#required'       => TRUE,
 					'#default_value'	=> number_format(0, 2, ",", "."),
 					'#field_suffix'		=> '€',
-					'#ajax' => array(
+/* 					'#ajax' => array(
 						'callback' => '_ajax_return_calculated_tradingprices',
 						'wrapper' => 'tradingprices-fieldset-wrapper',
 						'event' => 'blur',
-					),
+					), */
         ),
         'tradingprice_2_shipping' => array(
           '#type'           => 'textfield',
@@ -805,6 +818,11 @@ function regiomino_admin_manage_offers_getformfields() {
 						'private'	=> 'Privat',
 						'commercial'	=> 'Gewerblich',
 					),
+					// '#ajax' => array(
+						// 'callback' => '_ajax_update_tradingprice_field_calculation',
+						// 'wrapper' => 'tradingprices-fieldset-wrapper',
+						// 'event' => 'change',
+					// ),
         ),
       ),	
       array(
@@ -820,11 +838,11 @@ function regiomino_admin_manage_offers_getformfields() {
           '#required'       => TRUE,
 					'#default_value'	=> number_format(0, 2, ",", "."),
 					'#field_suffix'		=> '€',
-					'#ajax' => array(
+/* 					'#ajax' => array(
 						'callback' => '_ajax_return_calculated_tradingprices',
 						'wrapper' => 'tradingprices-fieldset-wrapper',
 						'event' => 'blur',
-					),
+					), */
         ),
         'tradingprice_3_shipping' => array(
           '#type'           => 'textfield',
@@ -874,6 +892,11 @@ function regiomino_admin_manage_offers_getformfields() {
 						'private'	=> 'Privat',
 						'commercial'	=> 'Gewerblich',
 					),
+					// '#ajax' => array(
+						// 'callback' => '_ajax_update_tradingprice_field_calculation',
+						// 'wrapper' => 'tradingprices-fieldset-wrapper',
+						// 'event' => 'change',
+					// ),
         ),
       ),
       array(
@@ -889,11 +912,11 @@ function regiomino_admin_manage_offers_getformfields() {
           '#required'       => TRUE,
 					'#default_value'	=> number_format(0, 2, ",", "."),
 					'#field_suffix'		=> '€',
-					'#ajax' => array(
+/* 					'#ajax' => array(
 						'callback' => '_ajax_return_calculated_tradingprices',
 						'wrapper' => 'tradingprices-fieldset-wrapper',
 						'event' => 'blur',
-					),
+					), */
         ),
         'tradingprice_4_shipping' => array(
           '#type'           => 'textfield',
@@ -943,6 +966,11 @@ function regiomino_admin_manage_offers_getformfields() {
 						'private'	=> 'Privat',
 						'commercial'	=> 'Gewerblich',
 					),
+					// '#ajax' => array(
+						// 'callback' => '_ajax_update_tradingprice_field_calculation',
+						// 'wrapper' => 'tradingprices-fieldset-wrapper',
+						// 'event' => 'change',
+					// ),
         ),
       ),
       array(
@@ -957,11 +985,11 @@ function regiomino_admin_manage_offers_getformfields() {
           '#required'       => TRUE,
 					'#default_value'	=> number_format(0, 2, ",", "."),
 					'#field_suffix'		=> '€',
-					'#ajax' => array(
+/* 					'#ajax' => array(
 						'callback' => '_ajax_return_calculated_tradingprices',
 						'wrapper' => 'tradingprices-fieldset-wrapper',
 						'event' => 'blur',
-					),
+					), */
         ),
         'tradingprice_5_shipping' => array(
           '#type'           => 'textfield',
@@ -1011,6 +1039,11 @@ function regiomino_admin_manage_offers_getformfields() {
 						'private'	=> 'Privat',
 						'commercial'	=> 'Gewerblich',
 					),
+					// '#ajax' => array(
+						// 'callback' => '_ajax_update_tradingprice_field_calculation',
+						// 'wrapper' => 'tradingprices-fieldset-wrapper',
+						// 'event' => 'change',
+					// ),
         ),
       ),
     ),  

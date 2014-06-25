@@ -1244,7 +1244,12 @@ function regiomino_offer_sort_most_popular_products($a, $b) {
 function regiomino_offer_add_tradingunit($offerobject, $qty = 1, $rev = 1, $customertype = 'private') {
 
 	$shp = $rev * 0.1;
-	$com = $rev * 0.1;
+	if($customertype == 'commercial') {
+		$com = $rev * 0.1;
+	}
+	else {
+		$com = $rev * 0.135;
+	}
 	$vat = ($rev + $shp + $com) * $offerobject->field_salestax[LANGUAGE_NONE][0]['value'] / 100;
 	$prc = $rev + $shp + $com;
 	$grs = $rev + $shp + $com + $vat;
