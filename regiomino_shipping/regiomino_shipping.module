@@ -52,6 +52,16 @@ function regiomino_shipping_menu() {
     'access callback' => 'regiomino_shipping_assignment_pickup_print_access',
     'access arguments' => array(3),
   );
+	
+	$items['admin/shippingassignments/printallpickups'] = array(
+    'page callback' => 'regiomino_shipping_print_all_pickups',
+    'access callback' => 'regiomino_shipping_assignment_access',
+  );
+	
+	$items['admin/shippingassignments/printalldeliveries'] = array(
+    'page callback' => 'regiomino_shipping_print_all_deliveries',
+    'access callback' => 'regiomino_shipping_assignment_access',
+  );
 
   $items['admin/shippingassignments/sortedfordelivery'] = array(
     'title' => 'Sorted for delivery',
@@ -540,9 +550,125 @@ function regiomino_shipping_set_assignments_point_delivered_finished($success, $
 }
 
 
+function regiomino_shipping_print_all_pickups() {
 
+	global $user;
+	$csvoutput = array();
+	
+	//Get shipping assignments for current user
+	$query = new EntityFieldQuery;
+	$shippingqry = $query
+		->entityCondition('entity_type', 'regiomino_order_shipping')
+		->propertyCondition('uid_p', $user->uid)
+		->execute();
 
+	$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
 
+	//Add complete order to shipping_items
+	foreach($shipping_items as $shippingid => $shippingvalues) {
+
+		//Get order items for current shipping id
+		$query = new EntityFieldQuery;
+		$orderqry = $query
+			->entityCondition('entity_type', 'regiomino_order')
+			->propertyCondition('shipping', $shippingid)
+			->execute();
+
+		$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+		
+		if($order_items[key($order_items)]->order_status == 'processing' ||	$order_items[key($order_items)]->order_status == 'completed') {
+			$shipping_items[$shippingid]->orders = $order_items;
+			
+			foreach($order_items as $orderid => $ordervalues) {
+			
+				$nodeobject = node_load($ordervalues->nid);
+				$sellerprofile = node_load(user_load($nodeobject->uid)->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+			
+				$csvoutput[] = array(
+					date('Y-m-d H:i', $shippingvalues->pickup_range_from),
+					$sellerprofile->title,
+					$ordervalues->seller_street1 . ' ' . $ordervalues->seller_street2,
+					$ordervalues->seller_postal_code,
+					$ordervalues->seller_city,
+					$ordervalues->delivery_first_name . ' ' . $ordervalues->delivery_last_name,
+					$ordervalues->order_process_id,
+					$ordervalues->product_count . ' x ' . $nodeobject->field_packingunit[LANGUAGE_NONE][0]['first'] . ' ' . t($nodeobject->field_packingunit[LANGUAGE_NONE][0]['second']),
+					$nodeobject->title,
+				);
+			}
+		}
+	}
+
+	regiomino_shipping_array_to_csv_download($csvoutput, 'AbholCSV.csv', ";", FALSE);
+	
+}
+
+function regiomino_shipping_print_all_deliveries() {
+
+	global $user;
+	$csvoutput = array();
+	
+	//Get shipping assignments for current user
+	$query = new EntityFieldQuery;
+	$shippingqry = $query
+		->entityCondition('entity_type', 'regiomino_order_shipping')
+		->propertyCondition('uid_p', $user->uid)
+		->execute();
+
+	$shipping_items = entity_load('regiomino_order_shipping', array_keys($shippingqry['regiomino_order_shipping']));
+
+	//Add complete order to shipping_items
+	foreach($shipping_items as $shippingid => $shippingvalues) {
+		
+		//Get order items for current shipping id
+		$query = new EntityFieldQuery;
+		$orderqry = $query
+			->entityCondition('entity_type', 'regiomino_order')
+			->propertyCondition('shipping', $shippingid)
+			->execute();
+
+		$order_items = entity_load('regiomino_order', array_keys($orderqry['regiomino_order']));
+		
+		if($order_items[key($order_items)]->order_status == 'processing' ||	$order_items[key($order_items)]->order_status == 'completed') {
+			$shipping_items[$shippingid]->orders = $order_items;
+			
+			foreach($order_items as $orderid => $ordervalues) {
+			
+				$nodeobject = node_load($ordervalues->nid);
+				$sellerprofile = node_load(user_load($nodeobject->uid)->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+			
+				if($shippingvalues->fci_p != $shippingvalues->fci) {
+					$fci = field_collection_item_load($shippingvalues->fci);
+					$recipientname = 'RM Point ' . $fci->field_address[LANGUAGE_NONE][0]['name_line'] . ' (' . $ordervalues->delivery_first_name . ' ' . $ordervalues->delivery_last_name . ')';
+					$recipientstreet = $fci->field_address[LANGUAGE_NONE][0]['thoroughfare'] . ' ' . $fci->field_address[LANGUAGE_NONE][0]['premise'];
+					$recipientzip = $fci->field_address[LANGUAGE_NONE][0]['postal_code'];
+					$recipientcity = $fci->field_address[LANGUAGE_NONE][0]['locality'];
+				}
+				else {
+					$recipientname = $ordervalues->delivery_first_name . ' ' . $ordervalues->delivery_last_name;
+					$recipientstreet = $ordervalues->delivery_street1 . ' ' . $ordervalues->delivery_street2;
+					$recipientzip = $ordervalues->delivery_postal_code;
+					$recipientcity = $ordervalues->delivery_city;
+				}
+				$csvoutput[] = array(
+					date('Y-m-d', $shippingvalues->shipping_range_from),
+					date('H:i', $shippingvalues->shipping_range_from) . ' - ' . date('H:i', $shippingvalues->shipping_range_to),
+					$recipientstreet,
+					$recipientzip,
+					$recipientcity,
+					$recipientname,
+					$ordervalues->order_process_id,
+					$sellerprofile->title,
+					$ordervalues->product_count . ' x ' . $nodeobject->field_packingunit[LANGUAGE_NONE][0]['first'] . ' ' . t($nodeobject->field_packingunit[LANGUAGE_NONE][0]['second']),
+					$nodeobject->title,
+				);
+			}
+		}
+	}
+
+	regiomino_shipping_array_to_csv_download($csvoutput, 'LieferCSV.csv', ";", FALSE);
+	
+}
 
 
 
