@@ -4,30 +4,57 @@
  * @file
  * Administration page callbacks for the regiomino_cart module.
  */
+ 
+function regiomino_geolocation_refresh_zipcode_polygons(&$form, $form_state) {
 
-/**
- * Form builder. Configure regiomino_cart
- * @ingroup forms
- * @see system_settings_form()
- */
-function regiomino_geolocation_admin_settings() {
-	$test = regiomino_shipping_get_regional_deliveryoptions('91052', 1);
+	$kml = simplexml_load_file(drupal_get_path('module', 'regiomino_admin') . '/kml/' . $form_state['values']['region'] . '.kml');
+	$zipcodepolygones = array();
+	foreach($kml->Document->Folder as $mainfolder) {
+		foreach($mainfolder->Folder as $subfolder) {
+			foreach($subfolder->Placemark as $placemark) {
+				if(isset($placemark->Polygon->outerBoundaryIs->LinearRing)) {
+					$name = get_object_vars($placemark);
+					$coords = get_object_vars($placemark->Polygon->outerBoundaryIs->LinearRing);
+					if(!isset($zipcodepolygones[$name['name']]) || empty($zipcodepolygones[$name['name']])) $zipcodepolygones[$name['name']] = $coords['coordinates'];
+				}
+			}
+		}
+	}
 
-	//Submit button
-	$form['submit'] = array(
-    '#type' => 'submit',
-    '#value' => t('Flush and refill database'),
+	db_set_active('zipcodepolygones');
+
+	$query = db_insert('polygones')
+	->fields(
+		array(
+			'zipcode',
+			'coordinates',
+		)
 	);
-	//Process form with system_settings_form
-  return $form;
-}
+	
+	foreach($zipcodepolygones as $zipcode => $coordinates) {
 
-function regiomino_geolocation_admin_settings_submit(&$form, &$form_state) {
+		$result = db_select('polygones', 'p')
+			->fields('p')
+			->condition('zipcode', $zipcode)
+			->execute()
+			->rowCount();
+			
+		if(!$result) {
+			$query->values(
+				array(
+					'zipcode' => $zipcode,
+					'coordinates' => $coordinates,
+				)
+			);
+		}
+		
+		unset($result);
+	}
 
+	$query->execute();
 	
 	
-	//Perform flush and refill here
-	regiomino_geolocation_refill_db();
+	db_set_active();
 }
 
 function regiomino_geolocation_refill_db() {
@@ -220,6 +247,29 @@ function regiomino_geolocation_refill_db() {
 	drupal_set_message(t('Variable with available zipcodes has been updated: @variable', array('@variable' => 'regiomino_geodb_avlbregions')), 'status');
 	*/
 	
+}
+
+function regiomino_geolocation_admin_settings() {
+	$test = regiomino_shipping_get_regional_deliveryoptions('91052', 1);
+	
+	$form['submit_refill'] = array(
+		'#type' => 'submit',
+    '#value' => t('Flush and refill database'),
+		'#submit' => array('regiomino_geolocation_refill_db'),
+	);
+	$form['region'] = array(
+		'#type' => 'select',
+		'#options' => array(
+			0,1,2,3,4,5,6,7,8,9
+		),
+	);
+  $form['submit_refresh'] = array(
+		'#type' => 'submit',
+		'#value' => 'PLZ-Bereich aktualisieren',
+		'#submit' => array('regiomino_geolocation_refresh_zipcode_polygons'),
+	);
+	//Process form with system_settings_form
+  return $form;
 }
 
 function regiomino_geolocation_sortdeliveryzips($a, $b) {

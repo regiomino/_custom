@@ -112,7 +112,10 @@ function regiomino_geolocation_menu() {
     'page callback' => 'regiomino_geolocation_get_participantxml',
     'access arguments' => array('access content'),
   );
-	
+  $items['regiomino-geolocation-coordinatestring'] = array(
+    'page callback' => 'regiomino_geolocation_get_coordinatestring',
+    'access arguments' => array('access content'),
+  );
   return $items;
 }
 
@@ -336,6 +339,92 @@ function regiomino_geolocation_block_info() {
     'cache' => DRUPAL_NO_CACHE, //Default
   );
   return $blocks;
+}
+
+function regiomino_geolocation_get_coordinatestring() {
+
+	$returnstring = '';
+	
+	$query = new EntityFieldQuery();
+	$tmp = $query
+		->entityCondition('entity_type', 'field_collection_item')
+		->entityCondition('bundle', 'field_delivery_options')
+		->fieldCondition('field_metro_key', 'value', $_POST['metro_key'])
+		->execute();
+		
+	$tmpkeys = array_keys($tmp['field_collection_item']);
+	
+	$field_collection_item = field_collection_item_load($tmpkeys[0]);
+	
+	db_set_active('zipcodepolygones');
+	
+	foreach($field_collection_item->{$_POST['field']}[LANGUAGE_NONE] as $area) {
+
+		if(strlen($area['value']) == 5) {
+			$result = db_select('polygones', 'p')
+				->fields('p')
+				->condition('zipcode', $area['value'])
+				->execute()
+				->fetchAssoc();
+			if(isset($result['coordinates'])) $returnstring .= '|' . trim($result['coordinates']);
+		}
+		elseif(strlen($area['value']) == 4) {
+			for($i=0; $i<=9; $i++) {
+				$result = db_select('polygones', 'p')
+					->fields('p')
+					->condition('zipcode', $area['value'] . $i)
+					->execute()
+					->fetchAssoc();
+				if(isset($result['coordinates'])) $returnstring .= '|' . trim($result['coordinates']);
+			}
+		}
+		elseif(strlen($area['value']) == 3) {
+			for($i=0; $i<=9; $i++) {
+				for($j=0; $j<=9; $j++) {
+					$result = db_select('polygones', 'p')
+						->fields('p')
+						->condition('zipcode', $area['value'] . $i . $j)
+						->execute()
+						->fetchAssoc();
+					if(isset($result['coordinates'])) $returnstring .= '|' . trim($result['coordinates']);
+				}
+			}
+		}
+		elseif(strlen($area['value']) == 2) {
+			for($i=0; $i<=9; $i++) {
+				for($j=0; $j<=9; $j++) {
+					for($k=0; $k<=9; $k++) {
+						$result = db_select('polygones', 'p')
+							->fields('p')
+							->condition('zipcode', $area['value'] . $i . $j . $k)
+							->execute()
+							->fetchAssoc();
+						if(isset($result['coordinates'])) $returnstring .= '|' . trim($result['coordinates']);
+					}
+				}
+			}
+		}
+		elseif(strlen($area['value']) == 1) {
+			for($i=0; $i<=9; $i++) {
+				for($j=0; $j<=9; $j++) {
+					for($k=0; $k<=9; $k++) {
+						for($l=0; $l<=9; $l++) {
+							$result = db_select('polygones', 'p')
+								->fields('p')
+								->condition('zipcode', $area['value'] . $i . $j . $k . $l)
+								->execute()
+								->fetchAssoc();
+							if(isset($result['coordinates'])) $returnstring .= '|' . trim($result['coordinates']);
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	db_set_active();
+	
+	echo $returnstring;
 }
 
 function regiomino_geolocation_get_participantxml() {

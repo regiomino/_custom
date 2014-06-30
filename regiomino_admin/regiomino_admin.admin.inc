@@ -1957,6 +1957,7 @@ function regiomino_admin_shippingoptions() {
 	
 	drupal_add_js(array(
 		'SHIPPING_OPTION_METRO_NAME' => $displayfci->field_metro_name[LANGUAGE_NONE][0]['value'],
+		'SHIPPING_OPTION_METRO_KEY' => $displayfci->field_metro_key[LANGUAGE_NONE][0]['value'],
 	), 'setting');
 
 	drupal_add_js('https://maps.googleapis.com/maps/api/js?sensor=false', 'external');
