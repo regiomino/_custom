@@ -1856,7 +1856,122 @@ function regiomino_admin_allorders() {
 	return render($form) . $output . theme('pager');
 }
 
-function regiomino_admin_offersmissingcommercial() {
+function regiomino_admin_shippingoptions() {
+
+	$header = array(
+		'field_metro_name' => array(
+			'data' => 'Großraum',
+			'type' => 'field',
+			'specifier' => array(
+				'field' => 'field_metro_name',
+				'column' => 'value',
+			),
+		),
+		'field_metro_key' => array(
+			'data' => 'Subdomain',
+			'type' => 'field',
+			'specifier' => array(
+				'field' => 'field_metro_key',
+				'column' => 'value',
+			),
+		),
+		'field_pickup_areas' => array(
+			'data' => 'Abhol-PLZ',
+			'type' => 'field',
+			'specifier' => array(
+				'field' => 'field_pickup_areas',
+				'column' => 'value',
+			),
+		),
+		'field_delivery_areas' => array(
+			'data' => 'Liefer-PLZ',
+			'type' => 'field',
+			'specifier' => array(
+				'field' => 'field_delivery_areas',
+				'column' => 'value',
+			),
+		),
+		'edit' => 'Aktionen',
+	);
+	
+	$query = new EntityFieldQuery;
+	$tmp = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'shipper_profile')
+		->propertyCondition('status', 1)
+		->execute();
+	$active_shipper_profiles = entity_load('node', array_keys($tmp['node']));
+	
+	$active_shipper_profile_ids = array();
+	foreach($active_shipper_profiles as $nodeobject) {
+		foreach($nodeobject->field_delivery_options[LANGUAGE_NONE] as $deliveryoption) {
+			$active_shipper_profile_ids[] = $deliveryoption['value'];
+		}
+	}
+
+	$query = new EntityFieldQuery;
+	$tmp = $query
+		->entityCondition('entity_type', 'field_collection_item')
+		->entityCondition('bundle', 'field_delivery_options')
+		->entityCondition('entity_id', $active_shipper_profile_ids)
+		->tableSort($header)
+		->pager(50)
+		->execute();
+	
+	$fieldcollections = entity_load('field_collection_item', array_keys($tmp['field_collection_item']));
+	
+	$queryparams = drupal_get_query_parameters();
+	
+	$findthis = '';
+	if(isset($queryparams['fci']) && !empty($queryparams['fci'])) {
+		$findthis = $queryparams['fci'];
+	}
+	
+	$options = array();
+	foreach($fieldcollections as $fci => $field_collection_item) {
+		
+		if($findthis == $fci) {
+			$displayfci = $field_collection_item;
+		}
+	
+		$field_pickup_areas = $field_collection_item->field_pickup_areas[LANGUAGE_NONE][0]['value'];
+		for($i=1; $i<count($field_collection_item->field_pickup_areas[LANGUAGE_NONE]); $i++) {
+			$field_pickup_areas .= ', ' . $field_collection_item->field_pickup_areas[LANGUAGE_NONE][$i]['value'];
+		}
+		
+		$field_delivery_areas = $field_collection_item->field_delivery_areas[LANGUAGE_NONE][0]['value'];
+		for($i=1; $i<count($field_collection_item->field_delivery_areas[LANGUAGE_NONE]); $i++) {
+			$field_delivery_areas .= ', ' . $field_collection_item->field_delivery_areas[LANGUAGE_NONE][$i]['value'];
+		}
+
+		$options[$fci] = array(
+				'field_metro_name' => $field_collection_item->field_metro_name[LANGUAGE_NONE][0]['value'],
+				'field_metro_key' => $field_collection_item->field_metro_key[LANGUAGE_NONE][0]['value'] . '.regiomino.de',
+				'field_pickup_areas' => $field_pickup_areas,
+				'field_delivery_areas' => $field_delivery_areas,
+				'edit' => l('Karte anzeigen', 'admin/support/shippingoptions', array('query' => array('fci' => $fci))),
+		);
+	}
+	
+	$output = theme('table', array('header' => $header, 'rows' => $options));
+	
+	drupal_add_js(array(
+		'SHIPPING_OPTION_METRO_NAME' => $displayfci->field_metro_name[LANGUAGE_NONE][0]['value'],
+	), 'setting');
+
+	drupal_add_js('https://maps.googleapis.com/maps/api/js?sensor=false', 'external');
+	drupal_add_js(drupal_get_path('module', 'regiomino_admin') . '/js/shippingmap.js');
+	
+	return	theme('regiomino_admin_theme_shippingoptions', array(
+					'vars' => array(
+						'output' => $output,
+						'pager' => theme('pager'),
+						'fci' => $displayfci,
+					),
+				));
+}
+
+/* function regiomino_admin_offersmissingcommercial() {
 
 	$header = array(
 		'nid' => array(
@@ -2002,7 +2117,7 @@ function regiomino_admin_offersmissingcommercial() {
 	$output = theme('table', array('header' => $header, 'rows' => $options));
 	
 	return $output . theme('pager');
-}
+} */
 
 function regiomino_admin_alloffers() {
 

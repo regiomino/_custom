@@ -32,10 +32,19 @@ function regiomino_admin_menu() {
     'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
     'file path' => drupal_get_path('module', 'regiomino_admin'),
   );
-	$items['admin/support/offersmissingcommercial'] = array(
+/* 	$items['admin/support/offersmissingcommercial'] = array(
     'title' => 'Keine Gewerbegebinde',
     'page callback' => 'regiomino_admin_offersmissingcommercial',
     'access callback' => 'regiomino_admin_offersmissingcommercial_access',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 2,
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+  ); */
+	$items['admin/support/shippingoptions'] = array(
+    'title' => 'Lieferstrecken',
+    'page callback' => 'regiomino_admin_shippingoptions',
+    'access callback' => 'regiomino_admin_shippingoptions_access',
     'type' => MENU_LOCAL_TASK,
     'weight' => 2,
     'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
@@ -885,6 +894,12 @@ function regiomino_admin_theme($existing, $type, $theme, $path) {
 		'offer_thumb_upload' => array(
 				'render element' => 'form',
 		),
+		'regiomino_admin_theme_shippingoptions' => array(
+			'template' => 'regiomino_admin_shippingoptions',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
 	);
 }
 
@@ -942,6 +957,17 @@ function regiomino_admin_alloffers_access() {
 }
 
 function regiomino_admin_offersmissingcommercial_access() {
+	global $user;
+	if(regiomino_admin_user_is_admin()) return TRUE;
+	$account = user_load($user->uid);
+	$return = FALSE;
+	in_array('Redakteur', $account->roles) ? $return = TRUE : $return = FALSE;
+	if($return) return $return;
+	in_array('Betreuer', $account->roles) ? $return = TRUE : $return = FALSE;
+	if($return) return $return;
+}
+
+function regiomino_admin_shippingoptions_access() {
 	global $user;
 	if(regiomino_admin_user_is_admin()) return TRUE;
 	$account = user_load($user->uid);
