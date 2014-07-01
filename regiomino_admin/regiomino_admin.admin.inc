@@ -191,6 +191,7 @@ function regiomino_admin_manage_offers_edit($form, &$form_state) {
 	
 	$nid = arg(3);
 	$nodeobject = node_load($nid);
+var_dump($nodeobject->field_tradingunits);
 	if($nodeobject->soldout == 1) {
 		drupal_set_message('Das ausgewählte Angebot ist bereits beendet und kann daher nicht mehr bearbeitet werden. Bitte nutzen Sie stattdessen die Kopier-Funktion in der Angebotsverwaltung um einen neuen Datensatz aus diesem Angebot zu erstellen.', 'error');
 		drupal_access_denied();
@@ -1538,7 +1539,12 @@ function regiomino_admin_manage_offers_selected_clone($form, &$form_state) {
 			$cloned_node->vid = NULL;
 			$cloned_node->tnid = NULL;
 			$cloned_node->title = str_replace('(VORLAGE) ', '', $cloned_node->title);
+			$tradingunits = entity_load('field_collection_item', $cloned_node->field_tradingunits[LANGUAGE_NONE]);
+			unset($cloned_node->field_tradingunits);
 			node_save($cloned_node);
+			foreach($tradingunits as $fcikey=>$fcivalue) {
+				regiomino_offer_add_tradingunit($cloned_node, $fcivalue->field_tu_size[LANGUAGE_NONE][0]['value'], $fcivalue->field_tu_revenue[LANGUAGE_NONE][0]['value'], $fcivalue->field_tu_customertype[LANGUAGE_NONE][0]['value']);
+			}
 		}
 	}
 	global $user;
@@ -1561,7 +1567,12 @@ function regiomino_admin_manage_offers_selected_model($form, &$form_state) {
 			$cloned_node->vid = NULL;
 			$cloned_node->tnid = NULL;
 			$cloned_node->title = $cloned_node->title;
+			$tradingunits = entity_load('field_collection_item', $cloned_node->field_tradingunits[LANGUAGE_NONE]);
+			unset($cloned_node->field_tradingunits);
 			node_save($cloned_node);
+			foreach($tradingunits as $fcikey=>$fcivalue) {
+				regiomino_offer_add_tradingunit($cloned_node, $fcivalue->field_tu_size[LANGUAGE_NONE][0]['value'], $fcivalue->field_tu_revenue[LANGUAGE_NONE][0]['value'], $fcivalue->field_tu_customertype[LANGUAGE_NONE][0]['value']);
+			}
 		}
 	}
 	global $user;
