@@ -636,16 +636,21 @@ function regiomino_shipping_print_all_deliveries() {
 			
 				$nodeobject = node_load($ordervalues->nid);
 				$sellerprofile = node_load(user_load($nodeobject->uid)->field_profilereference[LANGUAGE_NONE][0]['target_id']);
-			
+				$receiveruserobject = user_load($ordervalues->uid);
+				
 				if($shippingvalues->fci_p != $shippingvalues->fci) {
 					$fci = field_collection_item_load($shippingvalues->fci);
-					$recipientname = 'RM Point ' . $fci->field_address[LANGUAGE_NONE][0]['name_line'] . ' (' . $ordervalues->delivery_first_name . ' ' . $ordervalues->delivery_last_name . ')';
+					$recipientname = 'RM Point ' . $fci->field_address[LANGUAGE_NONE][0]['name_line'] . ' -> ' . $ordervalues->delivery_first_name . ' ' . $ordervalues->delivery_last_name;
+					if(!empty($ordervalues->delivery_phone)) $recipientname .= ' / 0' . ltrim($ordervalues->delivery_phone, '0');
 					$recipientstreet = $fci->field_address[LANGUAGE_NONE][0]['thoroughfare'] . ' ' . $fci->field_address[LANGUAGE_NONE][0]['premise'];
 					$recipientzip = $fci->field_address[LANGUAGE_NONE][0]['postal_code'];
 					$recipientcity = $fci->field_address[LANGUAGE_NONE][0]['locality'];
 				}
 				else {
-					$recipientname = $ordervalues->delivery_first_name . ' ' . $ordervalues->delivery_last_name;
+					
+					if(isset($receiveruserobject->field_alternativelocation[LANGUAGE_NONE][0]['value'])) $alternativeloc = t($receiveruserobject->field_alternativelocation[LANGUAGE_NONE][0]['value']);
+					$recipientname = $ordervalues->delivery_first_name . ' ' . $ordervalues->delivery_last_name . ' / 0' . ltrim($ordervalues->delivery_phone, '0');
+					if(isset($alternativeloc) && !empty($alternativeloc)) $recipientname .= ' / ' . $alternativeloc;
 					$recipientstreet = $ordervalues->delivery_street1 . ' ' . $ordervalues->delivery_street2;
 					$recipientzip = $ordervalues->delivery_postal_code;
 					$recipientcity = $ordervalues->delivery_city;
