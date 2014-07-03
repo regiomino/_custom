@@ -1,4 +1,4 @@
-<?php
+v<?php
 
 function regiomino_admin_topsellers() {
 
@@ -191,7 +191,6 @@ function regiomino_admin_manage_offers_edit($form, &$form_state) {
 	
 	$nid = arg(3);
 	$nodeobject = node_load($nid);
-var_dump($nodeobject->field_tradingunits);
 	if($nodeobject->soldout == 1) {
 		drupal_set_message('Das ausgewählte Angebot ist bereits beendet und kann daher nicht mehr bearbeitet werden. Bitte nutzen Sie stattdessen die Kopier-Funktion in der Angebotsverwaltung um einen neuen Datensatz aus diesem Angebot zu erstellen.', 'error');
 		drupal_access_denied();
