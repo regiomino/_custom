@@ -1,4 +1,4 @@
-v<?php
+<?php
 
 function regiomino_admin_topsellers() {
 
