@@ -1118,7 +1118,7 @@ function regiomino_cart_enter_coupon_form($form, &$form_state) {
 */
 function regiomino_cart_enter_coupon_form_validate($form, &$form_state) {
 	$couponcode = $form_state['values']['coupon'];
-	$validcodes = array('BAMBERG3');	
+	$validcodes = array('ABXFT51');	
 	if(!in_array($couponcode, $validcodes)) {
 		form_set_error('coupon', t('Your coupon code is invalid. Please contact us if you believe that this is not correct.'));
 	}

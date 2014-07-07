@@ -2,13 +2,13 @@ jQuery(document).ready(function($) {
 
 	var customIcons = {
 		storage_profile: {
-			icon: Drupal.settings.basePath + 'sites/all/themes/regiomino_seven/images/blatt_karte.png'
+			icon: Drupal.settings.basePath + 'sites/all/themes/rmshoploop/images/blatt_karte.png'
 		},
 		shipper_profile: {
-			icon: Drupal.settings.basePath + 'sites/all/themes/regiomino_seven/images/auto_karte.png'
+			icon: Drupal.settings.basePath + 'sites/all/themes/rmshoploop/images/auto_karte.png'
 		},
 		seller_profile: {
-			icon: Drupal.settings.basePath + 'sites/all/themes/regiomino_seven/images/bag_karte.png'
+			icon: Drupal.settings.basePath + 'sites/all/themes/rmshoploop/images/bag_karte.png'
 		}
 	};
 	
