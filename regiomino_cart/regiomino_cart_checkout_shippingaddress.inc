@@ -63,6 +63,17 @@ function regiomino_cart_shippingaddressinfo_form($form, &$form_state) {
 	//Display notice
 	//$form['notice']['#markup'] = '<div class="messages status">' . t('Please provide and confirm your delivery address. If you wish to enter a separate address for billing you can do so at the bottom of the form. If everything is alright, please click @continue', array('@continue' => t('Continue'))) . '</div>';
 	drupal_set_title('');
+	
+	$form['phoneaddress']['phonenumber'] = array(
+		'#type' => 'textfield', 
+		'#title' => 'Ihre Telefonnummer', 
+		'#default_value' => $userobject->field_privatephone['und'][0]['number'], 
+		'#size' => 41, 
+		'#maxlength' => 15,
+		'#required' => TRUE,
+		'#description' => t('Please be available under this number during the delivery time frame.'),
+	);
+	
 	if($shippingkey != 'centralpickup') {
 		$form['notice']['#markup'] = '<div class="shippingaddressinfo"><p>' . t('Please provide and confirm your delivery address. If you wish to enter a separate address for billing you can do so at the bottom of the form. If everything is alright, please click @continue', array('@continue' => t('Continue'))) . '</p></div>';
 		
@@ -119,16 +130,6 @@ function regiomino_cart_shippingaddressinfo_form($form, &$form_state) {
 			'#size' => 20, 
 			'#maxlength' => 128, 
 			'#required' => TRUE,
-		);
-		$form['deliveryaddress']['phonenumber'] = array(
-			'#type' => 'textfield', 
-			'#title' => t('Phone'), 
-			'#default_value' => $userobject->field_privatephone['und'][0]['number'], 
-			'#size' => 41, 
-			'#maxlength' => 15,
-			'#field_prefix' => '+49',
-			'#required' => TRUE,
-			'#description' => t('Please be available under this number during the delivery time frame.'),
 		);
 		
 		$form['deliveryaddress']['differentbilling'] = array(
@@ -197,16 +198,9 @@ function regiomino_cart_shippingaddressinfo_form($form, &$form_state) {
 
 	if($shippingkey != 'centralpickup') {
 		$form['endofform']['alternative'] = array(
-			'#type' => 'select',
+			'#type' => 'textfield',
 			'#title' => t('Delivery alternative'),
-			'#options' => array(
-				'garage' => t('Carport or Garage'),
-				'terrace' => t('Terrace'),
-				'frontdoor' => t('Leave at the front door'),
-				'backdoor' => t('Leave at the backdoor'),
-			),
-			'#required' => FALSE,
-			'#empty_option' => t('- Select -'),
+			'#required' => TRUE,
 			'#default_value' => $userobject->field_alternativelocation['und'][0]['value'],
 			'#description' => t("If your shipper does not reach you, he or she will try to leave your order with your neighbours. If you don't want this, you can select an alternative delivery location. Since this is about your groceries, please make sure the location is in your interest, e.g. safe from external influences."),
 		);
