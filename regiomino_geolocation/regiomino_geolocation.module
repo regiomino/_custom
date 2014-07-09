@@ -442,7 +442,7 @@ function regiomino_geolocation_get_participantxml() {
 		$query = new EntityFieldQuery();
 		$partqry = $query
 			->entityCondition('entity_type', 'node')
-			->entityCondition('bundle', array('storage_profile', 'shipper_profile', 'seller_profile'))
+			->entityCondition('bundle', array('seller_profile', 'commercial_profile'))
 			->propertyCondition('status', 1)
 			->execute();
 		$participantobjects = entity_load('node', array_keys($partqry['node']));

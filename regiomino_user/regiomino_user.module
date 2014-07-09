@@ -29,6 +29,12 @@ function regiomino_user_theme() {
 				'vars' => NULL,
 			)
 		),
+		'regiomino_user_theme_allparticipants' => array(
+			'template' => 'regiomino_user_allparticipants',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
 	);
 }
 
@@ -101,7 +107,77 @@ function regiomino_user_menu() {
 		'access callback' => 'regiomino_user_user_has_role',
 	);
 	
+	$items['allparticipants'] = array(
+    'page callback' => 'regiomino_user_all_participants',
+    'access arguments' => array('access content'),
+	);
+	
 	return $items;
+}
+
+function regiomino_user_all_participants() {
+	$header = array(
+		'type' => array(
+			'data' => 'Typ',
+			'type' => 'property',
+			'specifier' => 'type',
+		),
+		'title' => array(
+			'data' => 'Name',
+			'type' => 'property',
+			'specifier' => 'title',
+			'sort' => 'asc',
+		),
+ 		'field_address' => array(
+			'data' => 'Anschrift',
+			'type' => 'field',
+			'specifier' => array(
+				'field' => 'field_address',
+				'column' => 'thoroughfare',
+			),
+		),
+	);
+	
+	$queryparams = drupal_get_query_parameters();
+	
+	if(!isset($queryparams['type']) || empty($queryparams['type'])) $queryparams['type'] = array('seller_profile', 'commercial_profile');
+	
+	$query = new EntityFieldQuery;
+	$tmp = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', $queryparams['type'])
+		->propertyCondition('status', 1)
+		->tableSort($header)
+		->pager(50)
+		->execute();
+	$active_profiles = entity_load('node', array_keys($tmp['node']));
+	
+	$options = array();
+	foreach($active_profiles as $nid => $nodeobject) {
+		
+		$phone = '';
+		if(isset($nodeobject->field_publicphone[LANGUAGE_NONE][0]['number'])) {
+			$field = field_get_items('node', $nodeobject, 'field_publicphone');
+			$phone = render(field_view_value('node', $nodeobject, 'field_publicphone', $field[0]));
+		}
+
+		$options[$nid] = array(
+				'type' => node_type_get_name($nodeobject->type),
+				'title' => l($nodeobject->title, 'node/' . $nid),
+				'field_address' => drupal_render(addressfield_generate($nodeobject->field_address[LANGUAGE_NONE][0], array('address' => 'address'), array('mode' => 'render'))) . '<br />' . $phone,
+		);
+	}
+	
+	$output = theme('table', array('header' => $header, 'rows' => $options));
+	
+	return	theme('regiomino_user_theme_allparticipants', array(
+					'vars' => array(
+						'output' => $output,
+						'pager' => theme('pager'),
+						'seller_filter' => url(current_path(), array('query' => array('type' => 'seller_profile'))),
+						'commercial_filter' => url(current_path(), array('query' => array('type' => 'commercial_profile'))),
+					),
+				));
 }
 
 function regiomino_user_user_has_role() {

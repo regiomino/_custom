@@ -762,6 +762,12 @@ function regiomino_cart_block_view($delta = '') {
 				$valueaddup += $shipping;
 				$vataddup += $shippingtaxamount;
 				$orderaddup += $valueaddup;
+				
+				if(isset($_SESSION['geolocation_data'])) {
+					if($_SESSION['geolocation_data']['customertype'] == 'commercial') {
+						$orderaddup += $vataddup;
+					}
+				}
 
 				global $user;
 				$userobject = user_load($user->uid);
@@ -774,13 +780,7 @@ function regiomino_cart_block_view($delta = '') {
 					$usedbalance = $balance;
 				}
 				$leftoverbalance = $balance - $usedbalance;
-				$topay = $orderaddup - $balance;
-				
-				if(isset($_SESSION['geolocation_data'])) {
-					if($_SESSION['geolocation_data']['customertype'] == 'commercial') {
-						$topay += $vataddup;
-					}
-				}	
+				$topay = $orderaddup - $balance;	
 				
 				if($topay < 0) $topay = 0;
 				

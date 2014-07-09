@@ -1,14 +1,17 @@
 jQuery(document).ready(function($) {
 
 	var customIcons = {
-		storage_profile: {
+		/* storage_profile: {
 			icon: Drupal.settings.basePath + 'sites/all/themes/rmshoploop/images/blatt_karte.png'
 		},
 		shipper_profile: {
 			icon: Drupal.settings.basePath + 'sites/all/themes/rmshoploop/images/auto_karte.png'
+		},*/
+		commercial_profile: {
+			icon: "https://maps.google.com/mapfiles/ms/icons/green.png"
 		},
 		seller_profile: {
-			icon: Drupal.settings.basePath + 'sites/all/themes/rmshoploop/images/bag_karte.png'
+			icon: "https://maps.google.com/mapfiles/ms/icons/red.png"
 		}
 	};
 	
