@@ -599,7 +599,7 @@ function regiomino_geolocation_region_entry($form, &$form_state) {
 
 	$form['regiomino_geolocation_region']['submit-zipcode'] = array(
 		'#type' => 'submit',
-		'#value' => t('OK'),
+		'#value' => t('Einkauf starten!'),
 	);
 	return $form;
 }
