@@ -116,6 +116,10 @@ function regiomino_geolocation_menu() {
     'page callback' => 'regiomino_geolocation_get_coordinatestring',
     'access arguments' => array('access content'),
   );
+	$items['region-request'] = array(
+    'page callback' => 'regiomino_geolocation_region_request',
+    'access arguments' => array('access content'),
+	);
   return $items;
 }
 
@@ -932,3 +936,7 @@ function regiomino_geolocation_get_user_latlon() {
 		$view->display_handler->set_option('sorts', $view_sort);
   }
 } */
+
+function regiomino_geolocation_region_request() {
+	watchdog('region_application', print_r($_POST, TRUE));
+}
