@@ -18,7 +18,8 @@ function regiomino_geolocation_init() {
 		
 		$newurlstring = $tmp1[0] . '//' . $tmp2[1];
 		if(isset($tmp2[2])) $newurlstring .= '.' . $tmp2[2];
-		if(isset($current_path)) $newurlstring .= '/' . $current_path;
+		//if(isset($current_path)) $newurlstring .= '/' . $current_path;
+		
 		drupal_goto($newurlstring, array('external' => TRUE));
 	}
 
