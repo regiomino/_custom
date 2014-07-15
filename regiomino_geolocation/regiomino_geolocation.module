@@ -582,18 +582,26 @@ function regiomino_geolocation_block_view($delta = '') {
 
 function regiomino_geolocation_region_entry($form, &$form_state) {	
 
-	$avlbregions = variable_get('regiomino_geodb_avlbregions');
+	// $avlbregions = variable_get('regiomino_geodb_avlbregions');
 
-	$options_zipcodes = array();
-	foreach($avlbregions as $zip => $more) {
-		foreach($more as $key=>$value) {
-			if(!isset($options_zipcodes[$zip])) $options_zipcodes[$zip] = $zip . ' ' . $value['name'];
-		}
-	}
-		$form['regiomino_geolocation_region']['zipcode'] = array(
+	// $options_zipcodes = array();
+	// foreach($avlbregions as $zip => $more) {
+		// foreach($more as $key=>$value) {
+			// if(!isset($options_zipcodes[$zip])) $options_zipcodes[$zip] = $zip . ' ' . $value['name'];
+		// }
+	// }
+	
+	$options_zipcodes = array(
+		'96052' => 'Bamberg',
+		'91096' => 'Erlangen',
+		'91522' => 'Ansbach',
+	);
+	
+	
+	$form['regiomino_geolocation_region']['zipcode'] = array(
 		'#type' => 'select',
 		'#size' => 1,
-		'#empty_option' => '- Ihre PLZ -',
+		'#default_value' => '96052',
 		'#options' => $options_zipcodes,
 	);
 
