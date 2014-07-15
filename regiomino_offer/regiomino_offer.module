@@ -910,7 +910,12 @@ function regiomino_offer_cron() {
 			$enddate = strtotime($duplicatenode->field_duration['und'][0]['value']);
 			$newdate = strtotime('+' . $duplicatenode->field_renewal['und'][0]['value'] . ' weeks', $enddate);
 			$duplicatenode->field_duration['und'][0]['value'] = date('Y-m-d\TH:i:s', $newdate);
+			$tradingunits = entity_load('field_collection_item', $duplicatenode->field_tradingunits[LANGUAGE_NONE]);
+			unset($duplicatenode->field_tradingunits);
 			node_save($duplicatenode);
+			foreach($tradingunits as $fcikey=>$fcivalue) {
+				regiomino_offer_add_tradingunit($duplicatenode, $fcivalue->field_tu_size[LANGUAGE_NONE][0]['value'], $fcivalue->field_tu_revenue[LANGUAGE_NONE][0]['value'], $fcivalue->field_tu_customertype[LANGUAGE_NONE][0]['value']);
+			}
 			//Use new nid for updating flag lists and generating emails etc
 			$newnid = $duplicatenode->nid;
 			$oldnid = $nodeobject->nid;
@@ -1245,7 +1250,8 @@ function regiomino_offer_add_tradingunit($offerobject, $qty = 1, $rev = 1, $cust
 
 	$shp = $rev * 0.1;
 	if($customertype == 'commercial') {
-		$com = $rev * 0.1;
+		//$com = $rev * 0.1;
+		$com = $rev * 0;
 	}
 	else {
 		$com = $rev * 0.135;

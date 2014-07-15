@@ -35,6 +35,12 @@ function regiomino_user_theme() {
 				'vars' => NULL,
 			)
 		),
+		'regiomino_user_theme_faq' => array(
+			'template' => 'regiomino_user_faq',
+			'variables' => array(
+				'vars' => NULL,
+			)
+		),
 	);
 }
 
@@ -112,7 +118,32 @@ function regiomino_user_menu() {
     'access arguments' => array('access content'),
 	);
 	
+	$items['faq'] = array(
+		'title' => 'FAQ',
+    'page callback' => 'regiomino_user_faq',
+    'access arguments' => array('access content'),
+	);
+	
 	return $items;
+}
+
+function regiomino_user_faq() {
+
+	$query = new EntityFieldQuery;
+	$tmp = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'faq')
+		->propertyCondition('status', 1)
+		->propertyOrderBy('title')
+		->execute();
+		
+	$faq = entity_load('node', array_keys($tmp['node']));
+	
+	return	theme('regiomino_user_theme_faq', array(
+					'vars' => array(
+						'faq' => $faq,
+					),
+				));
 }
 
 function regiomino_user_all_participants() {
