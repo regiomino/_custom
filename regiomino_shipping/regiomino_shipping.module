@@ -2328,7 +2328,7 @@ function regiomino_shipping_get_available_pickupdates($product, $type = NULL, $c
 	}
 	
 	//Check capacities
-	foreach($returnarray as $key=>$value) {
+	/* foreach($returnarray as $key=>$value) {
 		$tmp = explode('-', $key);
 		//Get shipper capacities for this time frame
 		$shippercapacity = regiomino_shipping_check_remaining_capacity($tmp[0], $tmp[6], $tmp[1], $tmp[2], $fct);		
@@ -2388,7 +2388,7 @@ function regiomino_shipping_get_available_pickupdates($product, $type = NULL, $c
 			}
 		}
 		
-	}
+	} */
 	return $returnarray;
 }
 

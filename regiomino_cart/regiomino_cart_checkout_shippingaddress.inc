@@ -326,8 +326,10 @@ function regiomino_cart_shippingaddressinfo_form_submit($form, &$form_state) {
 		$userobject->field_billingaddress['und'][0]['postal_code'] = '';
 		$userobject->field_billingaddress['und'][0]['locality'] = '';	
 	}
+
+	$userobject->field_privatephone['und'][0]['number'] = $form_state['values']['phonenumber'];
+	
 	if($shippingkey != 'centralpickup') {
-		$userobject->field_privatephone['und'][0]['number'] = $form_state['values']['phonenumber'];
 		$userobject->field_alternativelocation['und'][0]['value'] = $form_state['values']['alternative'];
 	}
 	user_save($userobject);

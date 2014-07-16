@@ -1335,7 +1335,7 @@ function regiomino_order_payment_form_submit($form, &$form_state) {
 				'cmd' => $cmd,
 				'upload' => $upload,
 				'business' => $paypal_email,
-				'amount' => $item_amount,
+				//'amount' => $item_amount,
 				'return' => $return_url,
 				'cancel_return' => $cancel_return,
 				'notify_url' => $notify_url,
@@ -1382,7 +1382,7 @@ function regiomino_order_payment_form_submit($form, &$form_state) {
 				$nodeobject = node_load($productvalue['nid']);
 				$options['query']['item_name_' . $counter] = $productvalue['title'];
 				$options['query']['item_number_' . $counter] = $productvalue['nid'];
-				$options['query']['amount_' . $counter] = $productvalue['einzelpreis_wert_brutto'];
+				$options['query']['amount_' . $counter] = round($productvalue['einzelpreis_wert_brutto'], 2);
 				$options['query']['quantity_' . $counter] = $productvalue['menge'];
 				$counter++;
 			}	
