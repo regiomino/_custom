@@ -33,12 +33,69 @@ function regiomino_geolocation_init() {
 			drupal_goto(current_path());
 		}
 	}
+	
+	$tmp1 = explode('//', $base_url);
+	$tmp2 = explode('.', $tmp1[1]);
+
 
 	if(!isset($_SESSION['geolocation_data'])) {
-		$tmp1 = explode('//', $base_url);
-		$tmp2 = explode('.', $tmp1[1]);
-		if(isset($tmp2[1]) && !empty($tmp2[0]) && $tmp2[0] != 'www') {
+		if(isset($tmp2[1]) && !empty($tmp2[0]) && $tmp2[0] != 'www') {	
 			regiomino_geolocation_detect_by_subdomain($tmp2[0]);
+		}
+	}
+	
+	global $user;
+	$return = FALSE;
+	if($user->uid > 0) {
+		$account = user_load($user->uid);
+		in_array('Gewerbekunde', $account->roles) ? $return = TRUE : $return = FALSE;
+		if(regiomino_admin_user_is_admin()) $return = TRUE;
+	}
+	
+ 	if(isset($tmp2[1]) && !empty($tmp2[0]) && $tmp2[0] != 'www') {
+		if(!$return) {
+			$query = new EntityFieldQuery;
+			$tmp = $query
+				->entityCondition('entity_type', 'field_collection_item')
+				->fieldCondition('field_metro_key', 'value', $tmp2[0])
+				->execute();
+			$alltmpvalues = array_values($tmp['field_collection_item']);
+			$fci = field_collection_item_load($alltmpvalues[0]->item_id);
+			$currentpath = current_path();
+			if(
+				isset($fci->field_commercial_only[LANGUAGE_NONE][0]['value'])
+				&& $fci->field_commercial_only[LANGUAGE_NONE][0]['value'] == 1
+				&& $currentpath != 'user'
+				&& $currentpath != 'user/edit'
+				&& $currentpath != 'user/login'
+				&& $currentpath != 'user/register'
+				&& $currentpath != 'allparticipants'
+				&& $currentpath != 'node/2'
+				&& $currentpath != 'node/1129'
+				&& $currentpath != 'node/1188'
+				&& $currentpath != 'node/47201'
+				&& $currentpath != 'faq'
+				&& $currentpath != 'node/47202'
+				&& $currentpath != 'node/1174'
+				&& $currentpath != 'node/1130'
+				&& $currentpath != 'node/1193'
+				&& $currentpath != 'node/1170'
+				&& $currentpath != 'node/97'
+				&& $currentpath != 'node/11941'
+				&& $currentpath != 'node/889'
+				&& $currentpath != 'node/add/commercial-profile'
+				&& $currentpath != 'node/add/shipper-profile'
+				&& $currentpath != 'node/add/seller-profile'
+				&& $currentpath != 'node/add/coop-profile'
+			) {
+				if($user->uid > 0) {
+					module_invoke_all('user_logout', $user);
+					// Destroy the current session, and reset $user to the anonymous user.
+					session_destroy();
+				}
+				drupal_set_message('Bitte melden Sie sich als Gewerbekunde an oder registrieren Sie ein Gewerbekundenprofil um Produkte aus diesem Gebiet beziehen zu können', 'warning');
+				drupal_goto('user/register', array('query' => drupal_get_destination()));
+			}
 		}
 	}
 
@@ -596,11 +653,29 @@ function regiomino_geolocation_region_entry($form, &$form_state) {
 		// }
 	// }
 	
-	$options_zipcodes = array(
-		'96052' => 'Bamberg',
-		'91096' => 'Erlangen',
-		'91522' => 'Ansbach',
-	);
+	$query = new EntityFieldQuery();
+	$tmp = $query
+			->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', 'shipper_profile')
+			->propertyCondition('status', 1)
+			->execute();
+	$shipperprofiles = entity_load('node', array_keys($tmp['node']));
+	
+	$allfcis = array();
+	foreach($shipperprofiles as $nid => $nodeobject) {
+		foreach($nodeobject->field_delivery_options[LANGUAGE_NONE] as $index => $value) {
+			$allfcis[$value['value']] = TRUE;
+		}
+	}
+	
+	$field_collection_items = entity_load('field_collection_item', array_keys($allfcis));
+
+	foreach($field_collection_items as $fcid => $fcvalue) {
+		$options_zipcodes[$fcvalue->field_delivery_areas[LANGUAGE_NONE][0]['value']] = $fcvalue->field_metro_name[LANGUAGE_NONE][0]['value'];
+		if(isset($fcvalue->field_commercial_only[LANGUAGE_NONE][0]['value']) && $fcvalue->field_commercial_only[LANGUAGE_NONE][0]['value'] == 1) {
+			$options_zipcodes[$fcvalue->field_delivery_areas[LANGUAGE_NONE][0]['value']] .= ' (derzeit nur für Gewerbekunden)';
+		}
+	}
 	
 	
 	$form['regiomino_geolocation_region']['zipcode'] = array(
