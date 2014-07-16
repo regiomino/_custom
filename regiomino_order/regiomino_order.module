@@ -1964,6 +1964,7 @@ function regiomino_order_thankyou() {
 		watchdog('thankyou', $result);
 	}
 	$output = t('You will now receive an email with your order information as well as payment instructions.');
+	$output .= '<div id="trustedShopsCheckout" style="display:none;"></div>';
 	return $output;
 }
 
