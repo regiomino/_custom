@@ -956,7 +956,7 @@ function regiomino_invoice_summary_seller($time_from, $time_to, $buffer) {
 				 <br />
 				 <br />
 				<p style="color: rgb(189, 23, 35); font-size: x-small;">Regiomino GmbH - Habichtweg 6 - 91096 Möhrendorf</p>
-				<p>' . $seller_profile->field_company_name[LANGUAGE_NONE][0]['value'] . '<br />' . $seller_profile->field_address['und'][0]['thoroughfare'] . '<br />' . $seller_profile->field_address['und'][0]['premise'] . '<br />' . $seller_profile->field_address['und'][0]['postal_code'] . ' ' . $seller_profile->field_address['und'][0]['locality'] . '</p>
+				<p>' . $seller_profile->field_company_name[LANGUAGE_NONE][0]['value'] . '<br />' . $seller_profile->field_billingaddress['und'][0]['thoroughfare'] . '<br />' . $seller_profile->field_billingaddress['und'][0]['premise'] . '<br />' . $seller_profile->field_billingaddress['und'][0]['postal_code'] . ' ' . $seller_profile->field_billingaddress['und'][0]['locality'] . '</p>
 				<table border="0">
 					<tr>
 						<td width="320">&nbsp;</td><td width="100"><strong>Belegnummer</strong></td><td width="60">' . $newnid . '</td>

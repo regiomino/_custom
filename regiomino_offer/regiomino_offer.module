@@ -720,6 +720,10 @@ function regiomino_offer_availability($nodeobject, $amount, $withcart = FALSE) {
 	}
 	$fcis = entity_load('field_collection_item', $fcloadarray);
 	
+	foreach($fcis as $fcid=>$fcval) {
+		if($customertype != $fcval->field_tu_customertype[LANGUAGE_NONE][0]['value']) unset($fcis[$fcid]);
+	}
+	
 	//Sort without key preservation to ensure that the smalles unit has key 0
 	usort($fcis, "regiomino_offer_sort_tradingunits");
 	

@@ -181,6 +181,12 @@ function regiomino_admin_menu() {
     'title' => 'Aktive Angebote',
     'type' => MENU_DEFAULT_LOCAL_TASK,
     'weight' => 0,
+  );
+	$items['admin/offers/active/export'] = array(
+    'title' => 'Liste als CSV exportieren',
+    'type' => MENU_LOCAL_ACTION,
+    'page callback' => 'regiomino_admin_manage_offers_export',
+    'access callback' => 'regiomino_admin_user_is_seller',
   );	
 	$items['admin/offers/unpublished'] = array(
     'title' => 'Unveröffentlichte Angebote',
@@ -192,6 +198,12 @@ function regiomino_admin_menu() {
     'type' => MENU_LOCAL_TASK,
 		'weight' => 1,
   );
+	$items['admin/offers/unpublished/export'] = array(
+    'title' => 'Liste als CSV exportieren',
+    'type' => MENU_LOCAL_ACTION,
+    'page callback' => 'regiomino_admin_manage_offers_export',
+    'access callback' => 'regiomino_admin_user_is_seller',
+  );	
 	$items['admin/offers/templates'] = array(
     'title' => 'Angebotsvorlagen',
     'page callback' => 'drupal_get_form',
@@ -202,6 +214,12 @@ function regiomino_admin_menu() {
     'type' => MENU_LOCAL_TASK,
 		'weight' => 2,
   );
+	$items['admin/offers/templates/export'] = array(
+    'title' => 'Liste als CSV exportieren',
+    'type' => MENU_LOCAL_ACTION,
+    'page callback' => 'regiomino_admin_manage_offers_export',
+    'access callback' => 'regiomino_admin_user_is_seller',
+  );	
 	$items['admin/offers/archive'] = array(
     'title' => 'Archivierte Angebote',
     'page callback' => 'drupal_get_form',
@@ -211,6 +229,12 @@ function regiomino_admin_menu() {
     'file path' => drupal_get_path('module', 'regiomino_admin'),
     'type' => MENU_LOCAL_TASK,
 		'weight' => 3,
+  );
+	$items['admin/offers/archive/export'] = array(
+    'title' => 'Liste als CSV exportieren',
+    'type' => MENU_LOCAL_ACTION,
+    'page callback' => 'regiomino_admin_manage_offers_export',
+    'access callback' => 'regiomino_admin_user_is_seller',
   );
 	$items['admin/offers/create'] = array(
     'title' => 'Angebot erstellen',
@@ -238,6 +262,115 @@ function regiomino_admin_menu() {
     'access callback' => 'regiomino_admin_user_is_seller',
 	);
 	return $items;
+}
+
+function regiomino_admin_manage_offers_export($uid = NULL, $status = NULL, $model = NULL, $soldout = NULL) {
+	if(is_null($uid)) {
+		global $user;
+		$uid = $user->uid;
+	}
+	if(is_null($status) || is_null($model) || is_null($soldout)) {
+		$arg2 = arg(2);
+		switch($arg2) {
+			case "active":
+				$status = 1;
+				$soldout = 0;
+				break;
+			case "unpublished":
+				$status = 0;
+				$model = 0;
+				$soldout = 0;
+				break;
+			case "templates":
+				$status = 0;
+				$model = 1;
+				break;
+			case "archive":
+				$status = 1;
+				$soldout = 1;
+				$model = 0;
+				break;
+		}
+	}
+	
+	$query = new EntityFieldQuery();
+	$query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'offer')
+		->propertyCondition('uid', $uid);
+	if(!is_null($status)) $query->propertyCondition('status', $status);
+	if(!is_null($model)) $query->propertyCondition('model', $model);
+	if(!is_null($soldout)) $query->propertyCondition('soldout', $soldout);
+	$tmp = $query->execute();
+	
+	$allnodes = entity_load('node', array_keys($tmp['node']));
+	
+	$csvoutput[] = array(
+		'ID',
+		'Titel',
+		'Gebindegröße',
+		'Netto-Erlös (€)',
+		'Gebindetyp',
+		'Hauptkategorie',
+		'Unterkategorie',
+		'Beschreibung',
+		'Herkunft (Firma)',
+		'Herkunft (Land)',
+		'Herkunft (PLZ)',
+		'Herkunft (Ort)',
+		'Verbrauch in (Tage)',
+		'Gütesiegel (kommagetrennt)',
+		'Wichtige Hinweise',
+		'Produkteinheit (Menge)',
+		'Produkteinheit (Einheit)',
+		'Bestand',
+		'MwSt. (%)',
+		'Aufschub',
+		'Kühlklasse',
+	);
+	foreach($allnodes as $nid => $nodeobject) {
+		$alllabelids = array();
+		foreach($nodeobject->field_labels[LANGUAGE_NONE] as $bla => $labelval) {
+			$alllabelids[] = $labelval['target_id'];
+		}
+		$alllabels = entity_load('node', $alllabelids);
+		$labelstring = '';
+		foreach($alllabels as $labelvalue) {
+			if(!empty($labelstring)) $labelstring .= ', ';
+			$labelstring .= '"' . $labelvalue->title . '"';
+		}
+		foreach($nodeobject->field_tradingunits[LANGUAGE_NONE] as $index => $fcid) {
+			
+			$field_collection_item = field_collection_item_load($fcid['value']);
+			
+			$csvoutput[] = array(
+				$nodeobject->nid,
+				$nodeobject->title,
+				$field_collection_item->field_tu_size[LANGUAGE_NONE][0]['value'],
+				number_format($field_collection_item->field_tu_revenue[LANGUAGE_NONE][0]['value'], 2, ",", "."),
+				t($field_collection_item->field_tu_customertype[LANGUAGE_NONE][0]['value']),
+				'"' . taxonomy_term_load($nodeobject->field_category[LANGUAGE_NONE][0]['tid'])->name . '"',
+				'"' . taxonomy_term_load($nodeobject->field_category[LANGUAGE_NONE][1]['tid'])->name . '"',
+				$nodeobject->body[LANGUAGE_NONE][0]['value'],
+				$nodeobject->field_origin[LANGUAGE_NONE][0]['company_name'],
+				$nodeobject->field_origin[LANGUAGE_NONE][0]['country'],
+				$nodeobject->field_origin[LANGUAGE_NONE][0]['postal_code'],
+				$nodeobject->field_origin[LANGUAGE_NONE][0]['locality'],
+				$nodeobject->field_expiry[LANGUAGE_NONE][0]['first'],
+				$labelstring,
+				$nodeobject->field_importantnotices[LANGUAGE_NONE][0]['value'],
+				$nodeobject->field_packingunit[LANGUAGE_NONE][0]['first'],
+				t($nodeobject->field_packingunit[LANGUAGE_NONE][0]['second']),
+				$nodeobject->field_stock[LANGUAGE_NONE][0]['value'],
+				number_format($nodeobject->field_salestax[LANGUAGE_NONE][0]['value'], 2, ",", "."),
+				$nodeobject->field_pickupdelay[LANGUAGE_NONE][0]['value'],
+				$nodeobject->field_expiry[LANGUAGE_NONE][0]['second'],
+			);
+		}
+	}
+	
+	regiomino_offer_array_to_csv_download($csvoutput, 'Angebotsexport_' . date('Y-m-d-H-i') . '.csv', ";", FALSE);
+	return NULL;
 }
 
 function regiomino_admin_update_offerdata($nid = 0, $amount = 0, $field = '') {
@@ -663,7 +796,7 @@ function regiomino_admin_manage_offers_createnewnode($form_state, $createtemplat
 	//Add tradingprices to node
 	$amountrevenue = array();
 	for($i=1; $i<=5; $i++) {
-		if(!empty($form_state['values']['tradingprice_' . $i . '_amount'])) {
+		if(!empty($form_state['values']['tradingprice_' . $i . '_amount']) && !empty($form_state['values']['tradingprice_' . $i . '_netrevenue'])) {
 			$amountrevenue[$form_state['values']['tradingprice_' . $i . '_customertype']][] = array(
 				'amount' => intval($form_state['values']['tradingprice_' . $i . '_amount']),
 				'revenue' => floatval(str_replace(',', '.', $form_state['values']['tradingprice_' . $i . '_netrevenue'])),
@@ -834,7 +967,7 @@ function regiomino_admin_manage_offers_edit_submit($form, &$form_state) {
 		//Add tradingprices to node
 		$amountrevenue = array();
 		for($i=1; $i<=5; $i++) {
-			if(!empty($form_state['values']['tradingprice_' . $i . '_amount'])) {
+			if(!empty($form_state['values']['tradingprice_' . $i . '_amount']) && !empty($form_state['values']['tradingprice_' . $i . '_netrevenue'])) {
 				$amountrevenue[$form_state['values']['tradingprice_' . $i . '_customertype']][] = array(
 					'amount' => intval($form_state['values']['tradingprice_' . $i . '_amount']),
 					'revenue' => floatval(str_replace(',', '.', $form_state['values']['tradingprice_' . $i . '_netrevenue'])),

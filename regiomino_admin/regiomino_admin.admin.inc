@@ -688,7 +688,7 @@ function regiomino_admin_manage_offers_getformfields() {
         'tradingprice_1_netrevenue' => array(
           '#type'           => 'textfield',
           '#size'           => 3,  
-          '#required'       => TRUE,
+          '#required'       => FALSE,
 					'#default_value'	=> number_format(0, 2, ",", "."),
 					'#field_suffix'		=> '€',
 /* 					'#ajax' => array(
@@ -763,7 +763,7 @@ function regiomino_admin_manage_offers_getformfields() {
         'tradingprice_2_netrevenue' => array(
           '#type'           => 'textfield',
           '#size'           => 3,  
-          '#required'       => TRUE,
+          '#required'       => FALSE,
 					'#default_value'	=> number_format(0, 2, ",", "."),
 					'#field_suffix'		=> '€',
 /* 					'#ajax' => array(
@@ -837,7 +837,7 @@ function regiomino_admin_manage_offers_getformfields() {
         'tradingprice_3_netrevenue' => array(
           '#type'           => 'textfield',
           '#size'           => 3,  
-          '#required'       => TRUE,
+          '#required'       => FALSE,
 					'#default_value'	=> number_format(0, 2, ",", "."),
 					'#field_suffix'		=> '€',
 /* 					'#ajax' => array(
@@ -911,7 +911,7 @@ function regiomino_admin_manage_offers_getformfields() {
         'tradingprice_4_netrevenue' => array(
           '#type'           => 'textfield',
           '#size'           => 3,  
-          '#required'       => TRUE,
+          '#required'       => FALSE,
 					'#default_value'	=> number_format(0, 2, ",", "."),
 					'#field_suffix'		=> '€',
 /* 					'#ajax' => array(
@@ -984,7 +984,7 @@ function regiomino_admin_manage_offers_getformfields() {
         'tradingprice_5_netrevenue' => array(
           '#type'           => 'textfield',
           '#size'           => 3,  
-          '#required'       => TRUE,
+          '#required'       => FALSE,
 					'#default_value'	=> number_format(0, 2, ",", "."),
 					'#field_suffix'		=> '€',
 /* 					'#ajax' => array(
@@ -1102,6 +1102,8 @@ function regiomino_admin_manage_offers_getformfields() {
 
 
 function regiomino_admin_manage_offers_active($form, &$form_state) {
+
+	//$form['export']['#markup'] = '<p>' . l('Exportieren als CSV', 'admin/offers/active/export') . '</p>';
 
 	global $user;
 	
@@ -1222,17 +1224,17 @@ function regiomino_admin_manage_offers_active($form, &$form_state) {
 	}
   $form['submit_clone'] = array(
 		'#type' => 'submit',
-		'#value' => 'Neue Datensätze aus gewählten Angeboten erstellen',
+		'#value' => 'Datensätze in -Unveröffentlichte Angebote- kopieren',
 		'#submit' => array('regiomino_admin_manage_offers_selected_clone'),
 	);
   $form['submit_model'] = array(
 		'#type' => 'submit',
-		'#value' => 'Vorlagen aus gewählten Angeboten erstellen',
+		'#value' => 'Datensätze in -Angebotsvorlagen- kopieren',
 		'#submit' => array('regiomino_admin_manage_offers_selected_model'),
 	);
   $form['submit_end'] = array(
 		'#type' => 'submit',
-		'#value' => 'Gewählten Angebote beenden',
+		'#value' => 'Gewählten Angebote beenden und archivieren',
 		'#submit' => array('regiomino_admin_manage_offers_selected_end'),
 	);
 	$form['offers'] = array(
@@ -1299,7 +1301,7 @@ function regiomino_admin_manage_offers_templates ($form, &$form_state) {
 	
   $form['submit_clone'] = array(
 		'#type' => 'submit',
-		'#value' => 'Neue Datensätze aus gewählten Vorlagen erstellen',
+		'#value' => 'Datensätze in "Unveröffentlichte Angebote" kopieren',
 		'#submit' => array('regiomino_admin_manage_offers_selected_clone'),
 	);
   $form['submit_delete'] = array(
@@ -1385,7 +1387,7 @@ function regiomino_admin_manage_offers_unpublished($form, &$form_state) {
 	);
   $form['submit_model'] = array(
 		'#type' => 'submit',
-		'#value' => 'Vorlagen aus gewählten Angeboten erstellen',
+		'#value' => 'Datensätze in "Angebotsvorlagen" kopieren',
 		'#submit' => array('regiomino_admin_manage_offers_selected_model'),
 	);
 	$form['offers'] = array(
@@ -1450,12 +1452,12 @@ function regiomino_admin_manage_offers_archive($form, &$form_state) {
 	}
   $form['submit_clone'] = array(
 		'#type' => 'submit',
-		'#value' => 'Neue Datensätze aus gewählten Angeboten erstellen',
+		'#value' => 'Datensätze in "Unveröffentlichte Angebote" kopieren',
 		'#submit' => array('regiomino_admin_manage_offers_selected_clone'),
 	);
   $form['submit_model'] = array(
 		'#type' => 'submit',
-		'#value' => 'Vorlagen aus gewählten Angeboten erstellen',
+		'#value' => 'Datensätze in "Angebotsvorlagen" kopieren',
 		'#submit' => array('regiomino_admin_manage_offers_selected_model'),
 	);
 	$form['offers'] = array(

@@ -629,7 +629,7 @@ function regiomino_productranking_display_category() {
 		->fieldCondition('field_category', 'tid', $correcttid);
 		if(!empty($queryparams['label'])) $query->fieldCondition('field_labels', 'target_id', $queryparams['label']);
 		if(!empty($queryparams['seller'])) $query->propertyCondition('uid', $queryparams['seller']);
-	$productsincategory = $query->pager(48)->execute();
+	$productsincategory = $query->execute();
 	$offers = entity_load('node', array_keys($productsincategory['node']));
 	
 	$offers = regiomino_productranking_boost_entities($offers);
@@ -738,6 +738,16 @@ function regiomino_productranking_display_category() {
 		}
 	}
 	
+	if(isset($offers) && !empty($offers)) {
+	
+		$query = new EntityFieldQueryExtraFields();
+		$tmp = $query
+			->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', 'offer')
+			->propertyCondition('nid', array_keys($offers))
+			->pager(48)
+			->execute();
+	}
 	
 	//pass variables to template and return the result
 	return	theme('regiomino_productranking_theme_category', array(
