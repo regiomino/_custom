@@ -1,5 +1,149 @@
 <?php
 
+function regiomino_admin_manage_group($groupid) {
+	$groupobject = node_load($groupid);
+	if($groupobject->type == 'group_profile') {
+		$header = array(
+			'uid' => array(
+				'data' => 'Kundennummer',
+				'type' => 'property',
+				'specifier' => 'uid',
+				'sort' => 'desc',
+			),
+			// 'mail' => array(
+				// 'data' => 'E-Mail-Adresse',
+				// 'type' => 'property',
+				// 'specifier' => 'mail',
+			// ),
+			'commerce_profile' => 'Gewerbekundenprofile',
+			'orders' => 'Bestellvorgänge',
+		);
+		
+		$query = new EntityFieldQuery();
+		$tmp = $query
+			->entityCondition('entity_type', 'user')
+			->fieldCondition('field_profilereference_group', 'target_id', $groupid)
+			->fieldCondition('field_profilereference_commerce', 'target_id', 'NULL', '!=')
+			->tableSort($header)
+			->execute();
+		$all_users = entity_load('user', array_keys($tmp['user']));
+		$rows = array();
+		foreach($all_users as $uid=>$value) {
+
+			$commerceprofile = '';
+			if(isset($value->field_profilereference_commerce[LANGUAGE_NONE][0]['target_id'])) {
+				$profileobject = node_load($value->field_profilereference_commerce[LANGUAGE_NONE][0]['target_id']);
+				$commerceprofile .= l($profileobject->title, 'node/' . $profileobject->nid) . '<br />';
+			}
+			
+			$orderqry = new EntityFieldQuery();
+			$tmp2 = $orderqry
+				->entityCondition('entity_type', 'regiomino_order')
+				->propertyCondition('uid', $uid)
+				->execute();
+				
+			$orderobjects = entity_load('regiomino_order', array_keys($tmp2['regiomino_order']));
+			$order_processes = array();
+			foreach($orderobjects as $orderid => $orderobject) {
+				$order_processes[$orderobject->order_process_id] = TRUE;
+			}
+			
+			$rows[] = array(
+				$uid,
+				// $value->mail,
+				$commerceprofile,
+				count($order_processes),
+			);
+		}
+			
+		$customers = theme('table', array('header' => $header, 'rows' => $rows));
+		
+		
+		$header = array(
+			'uid' => array(
+				'data' => 'Kundennummer',
+				'type' => 'property',
+				'specifier' => 'uid',
+				'sort' => 'desc',
+			),
+			// 'mail' => array(
+				// 'data' => 'E-Mail-Adresse',
+				// 'type' => 'property',
+				// 'specifier' => 'mail',
+			// ),
+			'seller_profile' => 'Verkäuferprofile',
+		);
+		
+		$query = new EntityFieldQuery();
+		$tmp = $query
+			->entityCondition('entity_type', 'user')
+			->fieldCondition('field_profilereference_group', 'target_id', $groupid)
+			->fieldCondition('field_profilereference', 'target_id', 'NULL', '!=')
+			->tableSort($header)
+			->execute();
+		$all_users = entity_load('user', array_keys($tmp['user']));
+		$rows = array();
+		foreach($all_users as $uid=>$value) {
+			
+			$sellerprofile = '';
+			if(isset($value->field_profilereference[LANGUAGE_NONE][0]['target_id'])) {
+				$profileobject = node_load($value->field_profilereference[LANGUAGE_NONE][0]['target_id']);
+				$sellerprofile .= l($profileobject->title, 'node/' . $profileobject->nid) . '<br />';
+			}
+			
+			$rows[] = array(
+				$uid,
+				// $value->mail,
+				$sellerprofile,
+			);
+		}
+			
+		$sellers = theme('table', array('header' => $header, 'rows' => $rows));
+		
+		return '<h2>' . $groupobject->title . '</h2><h3>Gastronomen</h3>' .$customers . '<h3>Erzeuger</h3>' . $sellers;
+	}
+}
+
+function regiomino_admin_groups() {
+	global $user;
+
+	$header = array(
+		// 'nid' => array(
+			// 'data' => 'Art.#',
+			// 'type' => 'property',
+			// 'specifier' => 'nid',
+			// 'sort' => 'desc',
+		// ),
+		'title' => array(
+			'data' => 'Titel',
+			'type' => 'property',
+			'specifier' => 'title',
+		),
+		'manage' => 'Verwalten',
+	);
+
+	$query = new EntityFieldQuery();
+	$tmp = $query
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'group_profile')
+		->propertyCondition('uid', $user->uid)
+		->tableSort($header)
+		->execute();
+	$allgroups = entity_load('node', array_keys($tmp['node']));
+	
+	
+	foreach($allgroups as $nid=>$value) {		
+		$rows[] = array(
+			l($value->title, 'node/' . $nid),
+			l('Verwalten', 'admin/groups/manage/' . $nid),
+		);
+	}
+		
+	return theme('table', array('header' => $header, 'rows' => $rows));
+
+	
+}
+
 function regiomino_admin_topsellers() {
 
 	$queryparams = drupal_get_query_parameters();
