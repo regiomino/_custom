@@ -5,6 +5,29 @@
 */
 function regiomino_admin_menu() {
 	$items = array();
+  $items['admin/groups'] = array(
+    'title' => t('Gruppen'),
+    'page callback' => 'regiomino_admin_groups',
+		'access callback' => 'regiomino_admin_user_is_groupmanager',
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_NORMAL_ITEM,
+  );	
+	$items['admin/groups/groups'] = array(
+    'title' => 'Gruppen',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => 0,
+  );
+  $items['admin/groups/manage/%'] = array(
+    'title' => t('Gruppen'),
+    'page callback' => 'regiomino_admin_manage_group',
+		'page arguments' => array(3),
+		'access callback' => 'regiomino_admin_user_is_groupmanager',
+		'access arguments' => array(3),
+    'file' => 'regiomino_admin.admin.inc', // look for a function describing this form in this file
+    'file path' => drupal_get_path('module', 'regiomino_admin'),
+    'type' => MENU_NORMAL_ITEM,
+  );
 	$items['admin/support/paymenttasks'] = array(
     'title' => 'Perform payment tasks',
     'page callback' => 'regiomino_admin_paymenttasks',
@@ -989,6 +1012,14 @@ function regiomino_admin_user_has_role() {
 	if(regiomino_admin_user_is_admin()) return TRUE;
 	if($user->uid == 6127 || $user->uid == 6643) return TRUE;
 	return in_array('Redakteur', $user->roles) ? TRUE : FALSE;
+}
+
+function regiomino_admin_user_is_groupmanager($groupid = NULL) {
+	global $user;
+	if(regiomino_admin_user_is_admin()) return TRUE;
+	if(is_null($groupid))	return in_array('Gruppenmanager', $user->roles) ? TRUE : FALSE;
+	$groupobject = node_load($groupid);
+	return ($user->uid == $groupobject->uid) ? TRUE : FALSE;
 }
 
 function regiomino_admin_user_is_seller() {
