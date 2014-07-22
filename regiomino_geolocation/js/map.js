@@ -12,6 +12,12 @@ jQuery(document).ready(function($) {
 		},
 		seller_profile: {
 			icon: "https://maps.google.com/mapfiles/ms/icons/red.png"
+		},
+		storage_profile: {
+			icon: "https://maps.google.com/mapfiles/ms/icons/yellow.png"
+		},
+		group_profile: {
+			icon: "https://maps.google.com/mapfiles/ms/icons/blue.png"
 		}
 	};
 	

@@ -491,8 +491,130 @@ function regiomino_geolocation_get_coordinatestring() {
 
 function regiomino_geolocation_get_participantxml() {
 	
+	$zipcode = '91096';
+	if(isset($_SESSION['geolocation_data']['zipcode'])) $zipcode = $_SESSION['geolocation_data']['zipcode'];
+	
+	$fciquery = new EntityFieldQuery();
+	$smtmp = $fciquery
+		->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'shipper_profile')
+		->propertyCondition('status', 1)
+		->execute();
+		
+	$shipperprofiles = entity_load('node', array_keys($smtmp['node']));
+	$fcis = array();
+	foreach($shipperprofiles as $nid => $shipperprofile) {
+		foreach($shipperprofile->field_delivery_options[LANGUAGE_NONE] as $index => $value) {
+			$fcis[] = $value['value'];
+		}
+	}
+	$allfcis = entity_load('field_collection_item', $fcis);
+	$isset = FALSE;
+	foreach($allfcis as $fcid => $fcvalue) {
+		foreach($fcvalue->field_delivery_areas[LANGUAGE_NONE] as $index=>$value) {
+			if($value['value'] == $zipcode) $isset = TRUE;
+		}
+		if(!$isset) {
+			unset($allfcis[$fcid]);
+		}
+		else {
+			$isset = FALSE;
+		}
+	}
+	
+	$pickupkeys = array();
+	foreach($allfcis as $fcid => $fcvalue) {
+		foreach($fcvalue->field_pickup_areas[LANGUAGE_NONE] as $index=>$value) {
+			$pickupkeys[$value['value']] = TRUE;
+		}
+	}
+	$pickuprange = array();
+	foreach($pickupkeys as $key => $bool) {
+		if(strlen($key) == 4) {
+			for($i=0; $i<=9; $i++) {
+				$pickuprange[] = $key . $i;
+			}
+		}
+		elseif(strlen($key) == 3) {
+			for($i=0; $i<=9; $i++) {
+				for($j=0; $j<=9; $j++) {
+					$pickuprange[] = $key . $i . $j;
+				}
+			}
+		}
+		elseif(strlen($key) == 2) {
+			for($i=0; $i<=9; $i++) {
+				for($j=0; $j<=9; $j++) {
+					for($k=0; $k<=9; $k++) {
+						$pickuprange[] = $key . $i . $j . $k;
+					}
+				}
+			}
+		}
+		elseif(strlen($key) == 1) {
+			for($i=0; $i<=9; $i++) {
+				for($j=0; $j<=9; $j++) {
+					for($k=0; $k<=9; $k++) {
+						for($l=0; $l<=9; $l++) {
+							$pickuprange[] = $key . $i . $j . $k . $l;
+						}
+					}
+				}
+			}
+		}
+		else {
+			$pickuprange[] = "$key";
+		}
+	}
+	
+	$deliverykeys = array();
+	foreach($allfcis as $fcid => $fcvalue) {
+		foreach($fcvalue->field_delivery_areas[LANGUAGE_NONE] as $index=>$value) {
+			$deliverykeys[$value['value']] = TRUE;
+		}
+	}
+	$deliveryrange = array();
+	foreach($deliverykeys as $key => $bool) {
+		if(strlen($key) == 4) {
+			for($i=0; $i<=9; $i++) {
+				$deliveryrange[] = $key . $i;
+			}
+		}
+		elseif(strlen($key) == 3) {
+			for($i=0; $i<=9; $i++) {
+				for($j=0; $j<=9; $j++) {
+					$deliveryrange[] = $key . $i . $j;
+				}
+			}
+		}
+		elseif(strlen($key) == 2) {
+			for($i=0; $i<=9; $i++) {
+				for($j=0; $j<=9; $j++) {
+					for($k=0; $k<=9; $k++) {
+						$deliveryrange[] = $key . $i . $j . $k;
+					}
+				}
+			}
+		}
+		elseif(strlen($key) == 1) {
+			for($i=0; $i<=9; $i++) {
+				for($j=0; $j<=9; $j++) {
+					for($k=0; $k<=9; $k++) {
+						for($l=0; $l<=9; $l++) {
+							$deliveryrange[] = $key . $i . $j . $k . $l;
+						}
+					}
+				}
+			}
+		}
+		else {
+			$deliveryrange[] = "$key";
+		}
+	}
+	
+	
 	$time = time();
-	$cacheexpire = $time - 86400;
+	$cacheexpire = $time - 1;
 	//Get children of parent item (cache this)
 	$cached = cache_get('regiominogeolocation_map');
 	if($cached && $cached->created > $cacheexpire) {
@@ -504,10 +626,22 @@ function regiomino_geolocation_get_participantxml() {
 		$query = new EntityFieldQuery();
 		$partqry = $query
 			->entityCondition('entity_type', 'node')
-			->entityCondition('bundle', array('seller_profile', 'commercial_profile'))
+			->entityCondition('bundle', array('commercial_profile', 'storage_profile', 'group_profile'))
 			->propertyCondition('status', 1)
+			->fieldCondition('field_address', 'postal_code', $deliveryrange)
 			->execute();
-		$participantobjects = entity_load('node', array_keys($partqry['node']));
+		$deliveryobjects = entity_load('node', array_keys($partqry['node']));
+		
+		$query = new EntityFieldQuery();
+		$partqry = $query
+			->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', array('seller_profile'))
+			->propertyCondition('status', 1)
+			->fieldCondition('field_address', 'postal_code', $pickuprange)
+			->execute();
+		$pickupobjects = entity_load('node', array_keys($partqry['node']));
+		
+		$participantobjects = array_merge($deliveryobjects, $pickupobjects);
 		
 		$participants = array();
 		foreach($participantobjects as $nid=>$value) {
