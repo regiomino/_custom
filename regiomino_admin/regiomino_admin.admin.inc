@@ -72,6 +72,7 @@ function regiomino_admin_manage_group($groupid) {
 				// 'specifier' => 'mail',
 			// ),
 			'seller_profile' => 'Verkäuferprofile',
+			'active_offers' => 'Aktive Angebote',
 		);
 		
 		$query = new EntityFieldQuery();
@@ -91,10 +92,20 @@ function regiomino_admin_manage_group($groupid) {
 				$sellerprofile .= l($profileobject->title, 'node/' . $profileobject->nid) . '<br />';
 			}
 			
+			$offerqry = new EntityFieldQuery();
+			$activeoffers = $offerqry
+				->entityCondition('entity_type', 'node')
+				->entityCondition('bundle', 'offer')
+				->propertyCondition('status', 1)
+				->propertyCondition('soldout', 0)
+				->propertyCondition('uid', $uid)
+				->count()
+				->execute();
+			
 			$rows[] = array(
 				$uid,
-				// $value->mail,
 				$sellerprofile,
+				$activeoffers,
 			);
 		}
 			
