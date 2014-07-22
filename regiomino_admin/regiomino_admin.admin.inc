@@ -1456,7 +1456,7 @@ function regiomino_admin_manage_offers_templates ($form, &$form_state) {
 	
   $form['submit_clone'] = array(
 		'#type' => 'submit',
-		'#value' => 'Datensätze in "Unveröffentlichte Angebote" kopieren',
+		'#value' => 'Datensätze in -Unveröffentlichte Angebote- kopieren',
 		'#submit' => array('regiomino_admin_manage_offers_selected_clone'),
 	);
   $form['submit_delete'] = array(
@@ -1542,7 +1542,7 @@ function regiomino_admin_manage_offers_unpublished($form, &$form_state) {
 	);
   $form['submit_model'] = array(
 		'#type' => 'submit',
-		'#value' => 'Datensätze in "Angebotsvorlagen" kopieren',
+		'#value' => 'Datensätze in -Angebotsvorlagen- kopieren',
 		'#submit' => array('regiomino_admin_manage_offers_selected_model'),
 	);
 	$form['offers'] = array(
@@ -1607,12 +1607,12 @@ function regiomino_admin_manage_offers_archive($form, &$form_state) {
 	}
   $form['submit_clone'] = array(
 		'#type' => 'submit',
-		'#value' => 'Datensätze in "Unveröffentlichte Angebote" kopieren',
+		'#value' => 'Datensätze in -Unveröffentlichte Angebote- kopieren',
 		'#submit' => array('regiomino_admin_manage_offers_selected_clone'),
 	);
   $form['submit_model'] = array(
 		'#type' => 'submit',
-		'#value' => 'Datensätze in "Angebotsvorlagen" kopieren',
+		'#value' => 'Datensätze in -Angebotsvorlagen- kopieren',
 		'#submit' => array('regiomino_admin_manage_offers_selected_model'),
 	);
 	$form['offers'] = array(
