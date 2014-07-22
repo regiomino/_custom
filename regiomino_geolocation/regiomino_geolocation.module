@@ -614,7 +614,7 @@ function regiomino_geolocation_get_participantxml() {
 	
 	
 	$time = time();
-	$cacheexpire = $time - 1;
+	$cacheexpire = $time - 86400;
 	//Get children of parent item (cache this)
 	$cached = cache_get('regiominogeolocation_map');
 	if($cached && $cached->created > $cacheexpire) {
@@ -640,9 +640,9 @@ function regiomino_geolocation_get_participantxml() {
 			->fieldCondition('field_address', 'postal_code', $pickuprange)
 			->execute();
 		$pickupobjects = entity_load('node', array_keys($partqry['node']));
-		
+
 		$participantobjects = array_merge($deliveryobjects, $pickupobjects);
-		
+
 		$participants = array();
 		foreach($participantobjects as $nid=>$value) {
 			if($value->type == 'storage_profile') {
